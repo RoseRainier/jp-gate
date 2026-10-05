@@ -142,7 +142,7 @@ test/                      ユニットテスト・CLI 結合テスト
 
 ## Git への push
 
-ソース、設定例、ロックファイル、MIT ライセンス、GitHub Actions の CI を含みます。個人設定・API キー・`node_modules` はコミット対象から除外しています。
+ソース、設定例、ロックファイル、Apache 2.0 ライセンス、GitHub Actions の CI を含みます。個人設定・API キー・`node_modules` はコミット対象から除外しています。
 
 リモートリポジトリーを作成後、URL を指定して push してください。
 

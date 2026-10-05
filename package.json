@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Pi extension that corrects assistant responses into natural Japanese using a separate gate LLM",
   "type": "module",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": ["pi-package", "pi-extension", "japanese", "llm", "gate"],
   "files": ["extensions", "src", "examples", "README.md", "LICENSE", "CHANGELOG.md"],
   "pi": { "extensions": ["./extensions/jp-correct.ts"] },
