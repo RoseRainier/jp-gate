@@ -1,0 +1,27 @@
+{
+  "name": "pi-jp-correct",
+  "version": "0.1.0",
+  "description": "Pi extension that corrects assistant responses into natural Japanese using a separate gate LLM",
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["pi-package", "pi-extension", "japanese", "llm", "gate"],
+  "files": ["extensions", "src", "examples", "README.md", "LICENSE", "CHANGELOG.md"],
+  "pi": { "extensions": ["./extensions/jp-correct.ts"] },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --no-warnings --test test/*.test.ts",
+    "test:e2e": "node test/e2e.mjs",
+    "check": "npm run typecheck && npm test && npm run test:e2e"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": ">=1.0.2 <2",
+    "@earendil-works/pi-coding-agent": ">=1.0.2 <2"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "1.0.2",
+    "@earendil-works/pi-coding-agent": "1.0.2",
+    "@types/node": "^22.19.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": { "node": ">=22.19.0" }
+}

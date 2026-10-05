@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "gate": {
+    "model": "openai/gpt-4.1-mini",
+    "timeoutMs": 60000,
+    "maxTokens": 8192,
+    "temperature": 0
+  },
+  "failureMode": "block"
+}

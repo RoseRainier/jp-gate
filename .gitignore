@@ -1,0 +1,11 @@
+node_modules/
+coverage/
+*.tgz
+.env
+.env.*
+!.env.example
+.pi/
+/jp-gate.json
+*.local.json
+*.log
+.DS_Store
