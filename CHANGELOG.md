@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Move the default gate prompt to `prompts/jp-gate.md`; create an editable `jp-gate-prompt.md` outside the installed package only on first use, preserving it across package updates. Add project prompts, `gate.promptFile`, `--jp-gate-prompt`, prompt reloads, and status paths.
 - Add `validationMode: "json"`, `--jp-gate-validation json`, and `/jp-gate validation json` to accept JSON-valid corrections with changed text counts or JSON shapes while retaining code/URL protection and completion checks. Keep strict validation as the default.
 - Extract the gate prompt into `src/gate-prompt.ts` for independent editing while preserving its content and the `GATE_PROMPT` export from `src/gate.ts`.
 - Restore original line breaks and text blocks when the gate returns unchanged paragraphs as separate array entries; continue rejecting changed or incomplete split replies.

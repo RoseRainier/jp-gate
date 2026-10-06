@@ -65,6 +65,7 @@ pi update git:github.com/RoseRainier/jp-gate
 | --- | --- | --- |
 | `enabled` | `true` | 補正の ON/OFF |
 | `gate.model` | 未指定 | Gate 用の `provider/model-id`。補正対象の本文がある場合に必須 |
+| `gate.promptFile` | 自動選択 | カスタム Markdown プロンプトのパス。指定時はこのファイルを優先 |
 | `gate.timeoutMs` | `60000` | Gate の待機上限。ミリ秒の正整数 |
 | `gate.maxTokens` | `8192` | Gate の出力トークン上限。正整数 |
 | `gate.temperature` | `0` | Gate の temperature。`0`〜`2` |
@@ -73,7 +74,7 @@ pi update git:github.com/RoseRainier/jp-gate
 
 設定の優先順位は、低い順に **既定値 → 全体設定 → 作業ディレクトリーの設定 → 明示した追加設定 → CLI** です。`gate` 内の項目も個別に上書きします。未対応の項目や不正な値は設定エラーになります。
 
-設定ファイルを編集した後は `/jp-gate reload` または Pi の再起動で反映します。`/jp-gate reload` は起動時の CLI 指定も再適用するため、CLI で指定した値は設定ファイルの編集だけでは変わりません。
+設定ファイルやプロンプトの Markdown を編集した後は `/jp-gate reload` または Pi の再起動で反映します。`/jp-gate reload` は起動時の CLI 指定も再適用するため、CLI で指定した値は設定ファイルの編集だけでは変わりません。
 
 モデル指定は最初の `/` で区切ります。`openrouter/vendor/model-id` のようにモデル ID 自体に `/` があっても指定できます。`gate.maxTokens` がモデルの出力上限を超える場合は、モデルの上限に合わせて呼び出します。
 
@@ -87,6 +88,7 @@ pi update git:github.com/RoseRainier/jp-gate
 | `--jp-gate-model` | `provider/model-id` | Gate モデルを指定 |
 | `--jp-gate-validation` | `strict` / `json` | 検証モードを指定 |
 | `--jp-gate-config` | ファイルパス | 全体・作業ディレクトリーの設定に追加して読み込み |
+| `--jp-gate-prompt` | Markdown ファイルのパス | Gate のプロンプトを明示指定 |
 
 例えば、補正を無効にして起動する場合は `pi --jp-gate off`、追加設定を使う場合は `pi --jp-gate-config ./my-settings.json` と指定します。
 
@@ -94,15 +96,47 @@ pi update git:github.com/RoseRainier/jp-gate
 
 | コマンド | 動作 |
 | --- | --- |
-| `/jp-gate` または `/jp-gate status` | ON/OFF・モデル・検証モード・失敗時の動作・設定ファイルを表示 |
+| `/jp-gate` または `/jp-gate status` | ON/OFF・モデル・プロンプトのパス・検証モード・設定ファイルなどを表示 |
 | `/jp-gate on` | 補正を有効化 |
 | `/jp-gate off` | 補正を無効化 |
 | `/jp-gate model provider/model-id` | Gate モデルを変更 |
 | `/jp-gate validation json` | 補正結果の形式変更を許容 |
 | `/jp-gate validation strict` | 本文の個数・形式も検証 |
-| `/jp-gate reload` | 設定ファイルと起動時の CLI 指定を再読み込み |
+| `/jp-gate reload` | 設定ファイル・プロンプトと起動時の CLI 指定を再読み込み |
 
 対話コマンドによる設定変更は現在のセッション内で有効です。永続化する場合は設定ファイルを編集してください。再読み込みすると、対話中に変更した値も設定ファイルと CLI の値に戻ります。
+
+## プロンプトを編集する
+
+編集用プロンプトは **Markdown ファイル** です。全体用の保存場所は `~/.pi/agent/jp-gate-prompt.md` で、拡張パッケージの外にあるため `pi update` で上書きされません。`PI_CODING_AGENT_DIR` を指定している場合は、そのディレクトリー内を使います。
+
+全体用プロンプトを初めて使う際、ファイルがなければ同梱の [prompts/jp-gate.md](prompts/jp-gate.md) をコピーして作成します。既存のファイルは起動・再読み込み時にも上書きしません。以後はこの編集用 Markdown を変更し、`/jp-gate reload` で反映できます。
+
+| 適用範囲 | ファイル／指定方法 |
+| --- | --- |
+| 全体用 | `~/.pi/agent/jp-gate-prompt.md` |
+| 作業ディレクトリー用 | `<cwd>/.pi/jp-gate-prompt.md` を作成 |
+| 任意のファイル | `gate.promptFile` または `--jp-gate-prompt <path>` で指定 |
+
+プロンプトの選択順は、優先度の高い順に **CLI の `--jp-gate-prompt` → 設定の `gate.promptFile` → 作業ディレクトリーの Markdown → 全体用 Markdown** です。設定ファイル間の `gate.promptFile` の優先順位は、ほかの設定項目と同じです。明示指定した相対パスは、JSON 設定・CLI ともに起動時の `<cwd>` を基準に解決します。
+
+任意のファイルを設定する例:
+
+```json
+{
+  "gate": {
+    "promptFile": "/absolute/path/to/my-jp-gate-prompt.md"
+  }
+}
+```
+
+`pi --jp-gate-prompt ./my-prompt.md` と起動時に指定することもできます。更新後も保持したい編集用ファイルは、拡張のインストール先の外に保存してください。同梱の `prompts/jp-gate.md` は初期テンプレートで、パッケージ更新の対象になりますが、その変更を既存の編集用ファイルへ自動反映することはありません。
+
+Markdown の内容全体を、そのまま Gate の system prompt として渡します。TypeScript の宣言や文字列の囲みは不要です。旧 `src/gate-prompt.ts` を直接編集していた場合は、更新前にその指示本文を外部 Markdown へ移してください。
+
+プロンプトを変更する際も、入力が `texts` 配列であること、出力を JSON にすること、`⟦JP_GATE_...⟧` の保護マーカーを保持することを指示してください。JSON 構文・保護マーカーなどの検証はプログラム側で引き続き行います。
+
+存在しない明示指定ファイル、読めないファイル、空のプロンプトはエラーにします。別のプロンプトへの切り替えや上書きは行いません。OFF 時にはプロンプトを読み込まず、`/jp-gate on` で有効化するときに読み込みます。
 
 ## 補正結果の検証
 
@@ -169,12 +203,13 @@ ON 時は補正対象の応答ごとに Gate の待ち時間とモデル利用�
 | 「文章の数を変更しました」 | 形式差を許容するなら `validationMode: "json"` または `/jp-gate validation json` を使う |
 | 「有効な JSON ではありません」 | Gate のプロンプトやモデルを見直す。JSON 構文の確認は両モードで有効 |
 | 保護用マーカーのエラー | コード・URL のマーカーを保持できるよう Gate のプロンプトやモデルを見直す |
+| プロンプトが読めない／空 | `/jp-gate status` やエラーに表示されたパスを確認し、内容のある Markdown を保存して `/jp-gate reload` を実行する |
 | タイムアウト／出力上限による途中終了 | `gate.timeoutMs` / `gate.maxTokens` を調整する。出力上限はモデル側の制限も確認する |
 | 設定の変更が反映されない | `/jp-gate status` で設定ファイルを確認し、`/jp-gate reload` を実行する。CLI 指定はファイル設定より優先 |
 
-## プロンプトの変更と開発・検証
+## 開発・検証
 
-Gate のプロンプトは [src/gate-prompt.ts](src/gate-prompt.ts) の `GATE_PROMPT` にあります。補正指示を変えたい場合は、Pi が実際に読み込むソースを編集し、Pi を再起動してください。`/jp-gate reload` は設定の再読み込み用で、ソースコードの変更は読み込み直しません。
+プロンプトの Markdown は `/jp-gate reload` で読み直せます。拡張の TypeScript ソースを変更した場合は Pi を再起動してください。
 
 このリポジトリーのソースを直接読み込んで確認する場合は、`--no-extensions` で自動検出を停止し、`-e` でこの拡張を読み込みます。
 
@@ -193,7 +228,7 @@ npm run check
 npm pack --dry-run
 ```
 
-`npm run check` は型チェック、ユニットテスト、実際の Pi セッション・CLI を使う結合テストを実行します。テストは模擬モデルを使い、外部 API 呼び出しや実際の認証情報は不要です。ON/OFF、設定の優先順位、検証モード、補正前の本文が漏れないこと、失敗・中断時の動作などを確認します。実際の補正品質は使用する Gate モデルで確認してください。
+`npm run check` は型チェック、ユニットテスト、実際の Pi セッション・CLI を使う結合テストを実行します。テストは模擬モデルを使い、外部 API 呼び出しや実際の認証情報は不要です。ON/OFF、設定とプロンプトの優先順位、更新後のプロンプト保持・再読み込み、検証モード、補正前の本文が漏れないこと、失敗・中断時の動作などを確認します。実際の補正品質は使用する Gate モデルで確認してください。
 
 | ファイル | 役割 |
 | --- | --- |
@@ -201,7 +236,8 @@ npm pack --dry-run
 | [src/index.ts](src/index.ts) | CLI・対話コマンド・ライフサイクル |
 | [src/config.ts](src/config.ts) | 設定の読み込みと検証 |
 | [src/gate.ts](src/gate.ts) | Gate 呼び出し・補正結果の検証 |
-| [src/gate-prompt.ts](src/gate-prompt.ts) | Gate に渡すプロンプト |
+| [prompts/jp-gate.md](prompts/jp-gate.md) | 編集用ファイルの初期テンプレート |
+| [src/prompt.ts](src/prompt.ts) | 外部 Markdown の選択・初回作成・読み込み |
 | [src/protected-text.ts](src/protected-text.ts) | コード・URL のマスクと復元 |
 | [src/providers.ts](src/providers.ts) | Pi プロバイダーのラップと復元 |
 | [src/stream.ts](src/stream.ts) | ストリームの保持と補正後の出力 |

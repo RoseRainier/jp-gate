@@ -7,7 +7,7 @@ export default function fixture(pi: ExtensionAPI): void {
     api: "jp-gate-fixture-api",
     apiKey: "fixture-key",
     baseUrl: "http://unused.invalid",
-    models: ["draft", "editor", "bad-editor", "paragraph-draft", "split-editor", "changed-split-editor"].map((id) => ({
+    models: ["draft", "editor", "bad-editor", "paragraph-draft", "split-editor", "changed-split-editor", "prompt-editor"].map((id) => ({
       id, name: id, reasoning: false, input: ["text"],
       contextWindow: 32768, maxTokens: 8192,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -18,12 +18,15 @@ export default function fixture(pi: ExtensionAPI): void {
       if (model.id === "paragraph-draft") {
         text = "こんばんは。私はいつも通り元気よ。\n\nあなたこそ、今日どれくらい寝てないのかしら。数字で答えてもらえると助かるわ。";
       }
-      if (model.id === "editor") {
+      if (model.id === "editor" || model.id === "prompt-editor") {
         const last = context.messages.at(-1);
         if (!last || last.role !== "user" || typeof last.content !== "string") throw new Error("missing gate input");
         const input = JSON.parse(last.content) as { texts: string[] };
         const markers = input.texts[0].match(/⟦JP_GATE_[^⟧]+⟧/g) ?? [];
-        text = JSON.stringify({ texts: [`セットアップは完了しました。設定を確認してください。 ${markers.join(" ")}`] });
+        const system = context.messages.find((part) => part.role === "system");
+        const systemPrompt = system && typeof system.content === "string" ? system.content : "";
+        const prose = model.id === "prompt-editor" ? systemPrompt.split("\n")[0] : "セットアップは完了しました。設定を確認してください。";
+        text = JSON.stringify({ texts: [`${prose} ${markers.join(" ")}`] });
       } else if (model.id === "split-editor" || model.id === "changed-split-editor") {
         const last = context.messages.at(-1);
         if (!last || last.role !== "user" || typeof last.content !== "string") throw new Error("missing gate input");

@@ -11,7 +11,7 @@ const expected = "セットアップは完了しました。設定を確認し�
 const originalParagraphs = "こんばんは。私はいつも通り元気よ。\n\nあなたこそ、今日どれくらい寝てないのかしら。数字で答えてもらえると助かるわ。";
 let count = 0;
 
-function run(name, args = [], config, model = "draft") {
+function run(name, args = [], config, model = "draft", prepare) {
   const cwd = join(scratch, name);
   const agentDir = join(cwd, "agent");
   mkdirSync(agentDir, { recursive: true });
@@ -20,6 +20,7 @@ function run(name, args = [], config, model = "draft") {
     mkdirSync(join(cwd, ".pi"));
     writeFileSync(join(cwd, ".pi/jp-gate.json"), typeof config === "string" ? config : JSON.stringify(config));
   }
+  prepare?.(cwd, agentDir);
   const session = join(cwd, "session.jsonl");
   const result = spawnSync(process.execPath, [cli,
     "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes",
@@ -114,6 +115,54 @@ try {
   const passthrough = run("passthrough", [], { gate: { model: "jp-gate-fixture/bad-editor" }, failureMode: "passthrough" });
   assert.ok(passthrough.assistant.content[0].text.includes("Setup is"));
   assert.ok(passthrough.stderr.includes("未補正"));
+
+  const promptEditor = ["--jp-gate-model", "jp-gate-fixture/prompt-editor"];
+  const created = run("prompt-created", ["--jp-gate-model", "jp-gate-fixture/editor"]);
+  assert.equal(created.assistant.content[0].text, expected);
+  const globalPrompt = join(scratch, "prompt-created", "agent", "jp-gate-prompt.md");
+  assert.ok(readFileSync(globalPrompt, "utf8").includes("日本語"));
+  writeFileSync(globalPrompt, "# 保持するカスタム指示\nJSON で回答。");
+  const preserved = run("prompt-created", promptEditor);
+  assert.equal(preserved.assistant.content[0].text, "# 保持するカスタム指示 `npm run dev`");
+  assert.equal(readFileSync(globalPrompt, "utf8"), "# 保持するカスタム指示\nJSON で回答。");
+
+  const projectPrompt = run("prompt-project", promptEditor, undefined, "draft", (cwd, agentDir) => {
+    writeFileSync(join(agentDir, "jp-gate-prompt.md"), "# 全体の指示");
+    mkdirSync(join(cwd, ".pi"));
+    writeFileSync(join(cwd, ".pi", "jp-gate-prompt.md"), "# プロジェクトの指示");
+  });
+  assert.equal(projectPrompt.assistant.content[0].text, "# プロジェクトの指示 `npm run dev`");
+
+  const explicitPrompt = run("prompt-cli", [...promptEditor, "--jp-gate-prompt", "custom.md"], { gate: { promptFile: "config.md" } }, "draft", (cwd, agentDir) => {
+    writeFileSync(join(agentDir, "jp-gate-prompt.md"), "# 全体の指示");
+    writeFileSync(join(cwd, ".pi", "jp-gate-prompt.md"), "# プロジェクトの指示");
+    writeFileSync(join(cwd, "config.md"), "# 設定で指定した指示");
+    writeFileSync(join(cwd, "custom.md"), "# CLI で指定した指示");
+  });
+  assert.equal(explicitPrompt.assistant.content[0].text, "# CLI で指定した指示 `npm run dev`");
+
+  const configPrompt = run("prompt-config", promptEditor, { gate: { promptFile: "custom.md" } }, "draft", (cwd) => {
+    writeFileSync(join(cwd, "custom.md"), "# 設定で指定した指示");
+  });
+  assert.equal(configPrompt.assistant.content[0].text, "# 設定で指定した指示 `npm run dev`");
+
+  const missingPrompt = run("prompt-missing", [...promptEditor, "--jp-gate-prompt", "missing.md"]);
+  assert.equal(missingPrompt.assistant.stopReason, "error");
+  assert.deepEqual(missingPrompt.assistant.content, []);
+  assert.ok(missingPrompt.stderr.includes("プロンプトを読み込めません"));
+  assert.ok(!missingPrompt.stdout.includes("Setup is"));
+  assert.ok(!missingPrompt.history.includes("Setup is"));
+
+  const emptyPrompt = run("prompt-empty", promptEditor, undefined, "draft", (_cwd, agentDir) => {
+    writeFileSync(join(agentDir, "jp-gate-prompt.md"), " \n");
+  });
+  assert.equal(emptyPrompt.assistant.stopReason, "error");
+  assert.deepEqual(emptyPrompt.assistant.content, []);
+  assert.ok(emptyPrompt.stderr.includes("プロンプトが空"));
+  assert.equal(readFileSync(join(scratch, "prompt-empty", "agent", "jp-gate-prompt.md"), "utf8"), " \n");
+
+  const promptOff = run("prompt-missing-off", ["--jp-gate", "off", "--jp-gate-prompt", "missing.md"]);
+  assert.ok(promptOff.assistant.content[0].text.includes("Setup is"));
 
   console.log(`Pi CLI integration: ${count} cases passed (offline, no API calls).`);
 } finally { rmSync(scratch, { recursive: true, force: true }); }

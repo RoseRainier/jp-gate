@@ -20,12 +20,17 @@ test("configuration validates types, limits, and typos", () => {
   assert.equal(result.enabled, false);
   assert.equal(result.validationMode, "strict");
   assert.equal(mergeConfig(result, { validationMode: "json" }).validationMode, "json");
+  for (const promptFile of [false, null, "", " \t"]) {
+    assert.throws(() => mergeConfig(DEFAULT_CONFIG, { gate: { promptFile } }), /Markdown/);
+    assert.throws(() => parseFlags((key) => key === "jp-gate-prompt" ? promptFile as string : undefined), /Markdown/);
+  }
+  assert.equal(mergeConfig(result, { gate: { promptFile: "custom.md" } }).gate.promptFile, "custom.md");
 });
 
 test("CLI flags provide on/off overrides without boolean-default conflicts", () => {
   assert.deepEqual(parseFlags(() => undefined), {});
-  const flags: Record<string, string> = { "jp-gate": "off", "jp-gate-model": "p/m", "jp-gate-config": "./custom.json", "jp-gate-validation": "json" };
-  assert.deepEqual(parseFlags((key) => flags[key]), { enabled: false, model: "p/m", configPath: "./custom.json", validationMode: "json" });
+  const flags: Record<string, string> = { "jp-gate": "off", "jp-gate-model": "p/m", "jp-gate-config": "./custom.json", "jp-gate-validation": "json", "jp-gate-prompt": "./custom.md" };
+  assert.deepEqual(parseFlags((key) => flags[key]), { enabled: false, model: "p/m", configPath: "./custom.json", validationMode: "json", promptFile: "./custom.md" });
   assert.throws(() => parseFlags(() => "false"));
   for (const invalid of [true, "off", ""]) {
     assert.throws(() => parseFlags((key) => key === "jp-gate-validation" ? invalid : undefined), /strict \/ json/);
