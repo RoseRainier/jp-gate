@@ -7,7 +7,7 @@ export default function fixture(pi: ExtensionAPI): void {
     api: "jp-gate-fixture-api",
     apiKey: "fixture-key",
     baseUrl: "http://unused.invalid",
-    models: ["draft", "editor", "bad-editor"].map((id) => ({
+    models: ["draft", "editor", "bad-editor", "paragraph-draft", "split-editor", "changed-split-editor"].map((id) => ({
       id, name: id, reasoning: false, input: ["text"],
       contextWindow: 32768, maxTokens: 8192,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -15,12 +15,22 @@ export default function fixture(pi: ExtensionAPI): void {
     streamSimple: (model, context, options) => {
       if (options?.apiKey !== "fixture-key") throw new Error("fixture authentication lost");
       let text = "Setup is 完了。请确认 설정。 `npm run dev`";
+      if (model.id === "paragraph-draft") {
+        text = "こんばんは。私はいつも通り元気よ。\n\nあなたこそ、今日どれくらい寝てないのかしら。数字で答えてもらえると助かるわ。";
+      }
       if (model.id === "editor") {
         const last = context.messages.at(-1);
         if (!last || last.role !== "user" || typeof last.content !== "string") throw new Error("missing gate input");
         const input = JSON.parse(last.content) as { texts: string[] };
         const markers = input.texts[0].match(/⟦JP_GATE_[^⟧]+⟧/g) ?? [];
         text = JSON.stringify({ texts: [`セットアップは完了しました。設定を確認してください。 ${markers.join(" ")}`] });
+      } else if (model.id === "split-editor" || model.id === "changed-split-editor") {
+        const last = context.messages.at(-1);
+        if (!last || last.role !== "user" || typeof last.content !== "string") throw new Error("missing gate input");
+        const input = JSON.parse(last.content) as { texts: string[] };
+        const texts = input.texts.flatMap((part) => part.split("\n\n"));
+        if (model.id === "changed-split-editor") texts[0] = "変更された文章。";
+        text = JSON.stringify({ texts });
       } else if (model.id === "bad-editor") text = "invalid JSON";
       const result = response(model, text);
       const stream = createAssistantMessageEventStream();

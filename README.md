@@ -107,6 +107,7 @@ pi -e ./extensions/jp-correct.ts --jp-gate-config ./my-settings.json
 - Gate に渡すのはマスク済みの回答本文です。会話履歴、メインモデルの system prompt、thinking、ツールの定義・引数は渡しません。
 - Markdown のコードフェンス、インラインコード、インデントされたコード、URL、リンク先、HTML タグは原文を保持します。本文の見出しやリストなどは LLM に構造維持を指示します。
 - 校正結果の JSON 形式・本文の個数・保護マーカーを検証します。空の結果、出力上限による途中終了、保護マーカーの欠落・重複・順序変更は失敗として扱います。
+- 本文が改行位置で複数の配列要素に分かれただけで、全要素の内容・順序が原文と完全に一致する場合は、原文の改行と要素構造を復元します。分割された本文に翻訳・変更・欠落がある場合は失敗として扱い、推測で結合しません。
 - `block` では失敗時に未補正の本文を出しません。その応答に含まれるツール呼び出しも実行しません。`passthrough` を明示した場合は、失敗時に警告を出し、元の応答を出力します。
 - 中断操作は Gate にも伝わります。中断時は `passthrough` 設定でも元の応答を出しません。
 - OFF 時は Gate LLM を呼ばず、元のモデルのストリーミングを使います。
@@ -134,11 +135,14 @@ extensions/jp-correct.ts    Pi の読み込み口
 src/index.ts               CLI・対話コマンド・ライフサイクル
 src/providers.ts           Pi プロバイダーのラップと復元
 src/gate.ts                LLM による日本語校正
+src/gate-prompt.ts         Gate LLM に渡すプロンプト
 src/protected-text.ts      コード・URL のマスクと復元
 src/stream.ts              校正前のストリーム保持と校正後の出力
 src/config.ts              設定の読み込みと検証
 test/                      ユニットテスト・CLI 結合テスト
 ```
+
+プロンプトを変更する場合は `src/gate-prompt.ts` を編集してください。編集後は Pi を再起動して反映します。
 
 ## Git への push
 

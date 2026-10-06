@@ -68,6 +68,93 @@ test("valid Japanese is still reviewed by the LLM rather than language rules", a
   assert.equal(called, true);
 });
 
+test("unchanged Japanese paragraphs returned as separate array entries retain the original newlines and signature", async () => {
+  const paragraphs = [
+    "こんばんは。私はいつも通り元気よ。",
+    "あなたこそ、今日どれくらい寝てないのかしら。数字で答えてもらえると助かるわ。",
+  ];
+  const draft = message("", { content: [{ type: "text", text: paragraphs.join("\n\n"), textSignature: "original" }] });
+  let calls = 0;
+  let usageCount = 0;
+  const client: GateClient = {
+    find: () => testModel,
+    streamSimple: (_model, context) => {
+      calls++;
+      assert.deepEqual(JSON.parse(context.messages[0].content as string), { texts: [paragraphs.join("\n\n")] });
+      return streamOf(message(JSON.stringify({ texts: paragraphs })));
+    },
+  };
+  const corrected = await correctMessage(draft, config, client, undefined, () => usageCount++);
+  assert.deepEqual(corrected, draft);
+  assert.equal(corrected.content[0], draft.content[0]);
+  assert.equal(calls, 1);
+  assert.equal(usageCount, 1);
+});
+
+test("split recovery preserves text slots, CRLF separators, protected literals, thinking, and tools", async () => {
+  const thinking = { type: "thinking" as const, thinking: "private thought" };
+  const tool = { type: "toolCall" as const, id: "call-1", name: "bash", arguments: { command: "echo hello" } };
+  const draft = message("", {
+    stopReason: "toolUse",
+    content: [
+      { type: "text", text: "" },
+      { type: "text", text: "先頭 `first()`。\r\n \t\r\n次の段落 `second()`。\n最後。", textSignature: "signed" },
+      thinking,
+      { type: "text", text: "別の本文。\n\n終わり。" },
+      tool,
+    ],
+  });
+  const client: GateClient = {
+    find: () => testModel,
+    streamSimple: (_model, context) => {
+      const input = JSON.parse(context.messages[0].content as string) as { texts: string[] };
+      return streamOf(message(JSON.stringify({ texts: input.texts.flatMap((text) => text.split(/[ \t]*\r?\n[ \t\r\n]*/)) })));
+    },
+  };
+  const corrected = await correctMessage(draft, config, client);
+  assert.deepEqual(corrected, draft);
+  corrected.content.forEach((part, index) => assert.equal(part, draft.content[index]));
+});
+
+test("split replies with changed, missing, reordered, duplicated, or extra content are rejected", async () => {
+  const cases = [
+    { source: "先頭。\n\n末尾。", texts: ["先頭。", "変更。"] },
+    { source: "先頭。\n\n中間。\n\n末尾。", texts: ["先頭。", "末尾。"] },
+    { source: "先頭。\n\n末尾。", texts: ["末尾。", "先頭。"] },
+    { source: "先頭。\n\n末尾。", texts: ["先頭。", "末尾。", "末尾。"] },
+    { source: "先頭。\n\n末尾。", texts: ["先頭。", "追加。", "末尾。"] },
+    { source: "先頭。\n\n末尾。", texts: ["先頭。", "", "末尾。"] },
+    { source: "先頭。\n\n末尾。", texts: ["先頭。", "末尾。", 1] },
+    { source: "先頭。\n\n末尾。", texts: ["先頭。", "末尾。", "⟦JP_GATE_fake⟧"] },
+    { source: "先頭。末尾。", texts: ["先頭。", "末尾。"] },
+    { source: "hello world", texts: ["hello", "world"] },
+    { source: "hello\n\nworld", texts: ["こんにちは", "世界"] },
+  ];
+  for (const { source, texts } of cases) {
+    const client: GateClient = { find: () => testModel, streamSimple: () => streamOf(message(JSON.stringify({ texts }))) };
+    await assert.rejects(correctMessage(message(source), config, client), /文章の数/);
+  }
+});
+
+test("split replies cannot corrupt or move protected markers", async () => {
+  for (const mutation of ["missing", "duplicated", "reordered", "unknown"]) {
+    const client: GateClient = {
+      find: () => testModel,
+      streamSimple: (_model, context) => {
+        const input = JSON.parse(context.messages[0].content as string) as { texts: string[] };
+        const [first, second] = input.texts[0].match(/⟦JP_GATE_[^⟧]+⟧/g)!;
+        let changed = input.texts[0];
+        if (mutation === "missing") changed = changed.replace(first, "");
+        if (mutation === "duplicated") changed = changed.replace(first, first + first);
+        if (mutation === "reordered") changed = changed.replace(first, "TEMP").replace(second, first).replace("TEMP", second);
+        if (mutation === "unknown") changed = changed.replace(first, "⟦JP_GATE_fake⟧");
+        return streamOf(message(JSON.stringify({ texts: changed.split("\n\n") })));
+      },
+    };
+    await assert.rejects(correctMessage(message("先頭 `first()`。\n\n末尾 `second()`。"), config, client), /文章の数/);
+  }
+});
+
 test("code-only and tool-only messages require no editing and do not call the LLM", async () => {
   const client: GateClient = { find: () => { throw new Error("not called"); }, streamSimple: () => { throw new Error("not called"); } };
   const draft = message("```sh\necho hello\n```");

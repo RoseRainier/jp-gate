@@ -8,9 +8,10 @@ const root = resolve(import.meta.dirname, "..");
 const cli = join(root, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js");
 const scratch = mkdtempSync(join(tmpdir(), "jp-gate-e2e-"));
 const expected = "セットアップは完了しました。設定を確認してください。 `npm run dev`";
+const originalParagraphs = "こんばんは。私はいつも通り元気よ。\n\nあなたこそ、今日どれくらい寝てないのかしら。数字で答えてもらえると助かるわ。";
 let count = 0;
 
-function run(name, args = [], config) {
+function run(name, args = [], config, model = "draft") {
   const cwd = join(scratch, name);
   const agentDir = join(cwd, "agent");
   mkdirSync(agentDir, { recursive: true });
@@ -23,7 +24,7 @@ function run(name, args = [], config) {
   const result = spawnSync(process.execPath, [cli,
     "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes",
     "-e", join(root, "test/fixtures/provider.ts"), "-e", join(root, "extensions/jp-correct.ts"),
-    "--provider", "jp-gate-fixture", "--model", "draft", "--no-tools", "--thinking", "off",
+    "--provider", "jp-gate-fixture", "--model", model, "--no-tools", "--thinking", "off",
     "--session", session, "--mode", "json", "-p", ...args, "テスト回答を出してください。",
   ], { cwd, env: { ...process.env, PI_CODING_AGENT_DIR: agentDir }, encoding: "utf8", timeout: 25000, maxBuffer: 2 * 1024 * 1024 });
   assert.equal(result.error, undefined, `${name}: ${result.error?.message}`);
@@ -41,6 +42,21 @@ try {
   assert.ok(!on.stdout.includes("Setup is"), "raw draft leaked through a JSON partial");
   assert.ok(!on.history.includes("Setup is"), "raw draft persisted in the session");
   assert.ok(on.history.includes("jp-gate-usage"));
+
+  const split = run("unchanged-split", ["--jp-gate-model", "jp-gate-fixture/split-editor"], undefined, "paragraph-draft");
+  assert.equal(split.assistant.stopReason, "stop");
+  assert.deepEqual(split.assistant.content, [{ type: "text", text: originalParagraphs }]);
+  const savedMessages = split.history.trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(savedMessages.findLast((entry) => entry.message?.role === "assistant").message.content[0].text, originalParagraphs);
+  assert.equal(savedMessages.filter((entry) => entry.customType === "jp-gate-usage").length, 1);
+  assert.ok(!split.stderr.includes("文章の数"));
+
+  const changedSplit = run("changed-split", ["--jp-gate-model", "jp-gate-fixture/changed-split-editor"], undefined, "paragraph-draft");
+  assert.equal(changedSplit.assistant.stopReason, "error");
+  assert.deepEqual(changedSplit.assistant.content, []);
+  assert.ok(changedSplit.assistant.errorMessage.includes("入力: 1、出力: 2"));
+  assert.ok(!changedSplit.stdout.includes("こんばんは。"));
+  assert.ok(!changedSplit.history.includes("こんばんは。"));
 
   const off = run("off", ["--jp-gate", "off"]);
   assert.ok(off.assistant.content[0].text.includes("Setup is"));
