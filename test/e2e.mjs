@@ -58,6 +58,31 @@ try {
   assert.ok(!changedSplit.stdout.includes("こんばんは。"));
   assert.ok(!changedSplit.history.includes("こんばんは。"));
 
+  const flexibleConfig = { gate: { model: "jp-gate-fixture/changed-split-editor" }, validationMode: "json" };
+  const flexibleExpected = "変更された文章。\n\n" + originalParagraphs.split("\n\n")[1];
+  const flexible = run("json-split", [], flexibleConfig, "paragraph-draft");
+  assert.equal(flexible.assistant.stopReason, "stop");
+  assert.deepEqual(flexible.assistant.content, [{ type: "text", text: flexibleExpected }]);
+  assert.ok(!flexible.stdout.includes("こんばんは。"));
+  assert.ok(!flexible.history.includes("こんばんは。"));
+  const flexibleSaved = flexible.history.trim().split("\n").map((line) => JSON.parse(line));
+  assert.equal(flexibleSaved.findLast((entry) => entry.message?.role === "assistant").message.content[0].text, flexibleExpected);
+  assert.equal(flexibleSaved.filter((entry) => entry.customType === "jp-gate-usage").length, 1);
+
+  const flexibleFlag = run("json-split-flag", ["--jp-gate-validation", "json", "--jp-gate-model", "jp-gate-fixture/changed-split-editor"], undefined, "paragraph-draft");
+  assert.deepEqual(flexibleFlag.assistant.content, flexible.assistant.content);
+  const strictOverride = run("strict-overrides-json", ["--jp-gate-validation", "strict"], flexibleConfig, "paragraph-draft");
+  assert.equal(strictOverride.assistant.stopReason, "error");
+  assert.deepEqual(strictOverride.assistant.content, []);
+  assert.ok(!strictOverride.history.includes("こんばんは。"));
+
+  const jsonInvalid = run("json-invalid", ["--jp-gate-validation", "json", "--jp-gate-model", "jp-gate-fixture/bad-editor"]);
+  assert.equal(jsonInvalid.assistant.stopReason, "error");
+  assert.deepEqual(jsonInvalid.assistant.content, []);
+  assert.ok(jsonInvalid.assistant.errorMessage.includes("有効な JSON"));
+  assert.ok(!jsonInvalid.stdout.includes("Setup is"));
+  assert.ok(!jsonInvalid.history.includes("Setup is"));
+
   const off = run("off", ["--jp-gate", "off"]);
   assert.ok(off.assistant.content[0].text.includes("Setup is"));
   assert.ok(!off.history.includes("jp-gate-usage"));

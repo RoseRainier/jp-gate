@@ -44,6 +44,17 @@ test("slash commands, settings reload, provider restoration, and extension reloa
     await session.prompt("テスト");
     assert.equal(session.getLastAssistantText(), expected);
 
+    await session.setModel(runtime.getModel("jp-gate-fixture", "paragraph-draft")!);
+    await session.prompt("/jp-gate model jp-gate-fixture/changed-split-editor");
+    await session.prompt("/jp-gate validation json");
+    await session.prompt("テスト");
+    assert.equal(session.getLastAssistantText(), "変更された文章。\n\nあなたこそ、今日どれくらい寝てないのかしら。数字で答えてもらえると助かるわ。");
+    await session.prompt("/jp-gate validation strict");
+    await session.prompt("テスト");
+    assert.ok(!session.getLastAssistantText());
+    await session.setModel(runtime.getModel("jp-gate-fixture", "draft")!);
+    await session.prompt("/jp-gate model jp-gate-fixture/editor");
+
     await writeFile(configPath, JSON.stringify({ enabled: false, gate: { model: "jp-gate-fixture/editor" } }));
     await session.prompt("/jp-gate reload");
     await session.prompt("テスト");

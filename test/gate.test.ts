@@ -6,6 +6,7 @@ import { protectText, restoreText } from "../src/protected-text.ts";
 import { message, streamOf, testModel } from "./helpers.ts";
 
 const config = mergeConfig(DEFAULT_CONFIG, { gate: { model: "fixture/editor", timeoutMs: 500 } });
+const jsonConfig = mergeConfig(config, { validationMode: "json" });
 
 test("literal Markdown, inline code, URLs, and fenced code survive the LLM unchanged", () => {
   const original = "Setup is 完了。 `npm run dev` [ガイド](./guide_(ja).md) https://example.com/docs。\n````ts\nconst x = '你好';\n```\n````\n    echo 'hello'\n";
@@ -133,6 +134,112 @@ test("split replies with changed, missing, reordered, duplicated, or extra conte
   for (const { source, texts } of cases) {
     const client: GateClient = { find: () => testModel, streamSimple: () => streamOf(message(JSON.stringify({ texts }))) };
     await assert.rejects(correctMessage(message(source), config, client), /文章の数/);
+  }
+});
+
+test("JSON validation accepts translated split replies and alternate JSON shapes", async () => {
+  const cases = [
+    { reply: { texts: ["こんにちは", "世界"] }, expected: "こんにちは\n\n世界" },
+    { reply: ["こんにちは", "世界"], expected: "こんにちは\n\n世界" },
+    { reply: { texts: "こんにちは、世界" }, expected: "こんにちは、世界" },
+    { reply: "こんにちは、世界", expected: "こんにちは、世界" },
+    { reply: { result: "こんにちは、世界" }, expected: '{"result":"こんにちは、世界"}' },
+    { reply: { texts: ["こんにちは", 1] }, expected: '{"texts":["こんにちは",1]}' },
+    { reply: null, expected: "null" },
+    { reply: 42, expected: "42" },
+    { reply: true, expected: "true" },
+  ];
+  for (const { reply, expected } of cases) {
+    const client: GateClient = { find: () => testModel, streamSimple: () => streamOf(message(JSON.stringify(reply))) };
+    const corrected = await correctMessage(message("hello\n\nworld"), jsonConfig, client);
+    assert.deepEqual(corrected.content, [{ type: "text", text: expected }]);
+  }
+});
+
+test("JSON validation combines changed block counts and preserves reasoning, tools, and usage", async () => {
+  for (const outputCount of [1, 3]) {
+    const thinking = { type: "thinking" as const, thinking: "private thought", thinkingSignature: "signed" };
+    const tool = { type: "toolCall" as const, id: "call-1", name: "bash", arguments: { command: "echo hello" } };
+    const draft = message("", { stopReason: "toolUse", content: [
+      thinking,
+      { type: "text", text: "First `first()`.", textSignature: "old-1" },
+      tool,
+      { type: "text", text: "Second `second()`.", textSignature: "old-2" },
+    ] });
+    const client: GateClient = {
+      find: () => testModel,
+      streamSimple: (_model, context) => {
+        const input = JSON.parse(context.messages[0].content as string) as { texts: string[] };
+        const [first, second] = input.texts.map((text) => text.match(/⟦JP_GATE_[^⟧]+⟧/)![0]);
+        const texts = outputCount === 1 ? [`先頭 ${first}。末尾 ${second}。`] : [`先頭 ${first}。`, "中間。", `末尾 ${second}。`];
+        return streamOf(message(JSON.stringify({ texts })));
+      },
+    };
+    const corrected = await correctMessage(draft, jsonConfig, client);
+    assert.deepEqual(corrected.content, [thinking, { type: "text", text: outputCount === 1 ? "先頭 `first()`。末尾 `second()`。" : "先頭 `first()`。\n\n中間。\n\n末尾 `second()`。" }, tool]);
+    assert.equal(corrected.content[0], thinking);
+    assert.equal(corrected.content[2], tool);
+    assert.equal(corrected.usage, draft.usage);
+    assert.equal(corrected.stopReason, "toolUse");
+  }
+});
+
+test("JSON validation retains original slots for unchanged split replies and matching counts", async () => {
+  const draft = message("先頭。\n\n末尾。", { content: [
+    { type: "text", text: "先頭。\n\n末尾。", textSignature: "signed" },
+    { type: "thinking", thinking: "private" },
+    { type: "text", text: "別の本文。" },
+  ] });
+  const client: GateClient = { find: () => testModel, streamSimple: () => streamOf(message('{"texts":["先頭。","末尾。","別の本文。"]}')) };
+  assert.deepEqual(await correctMessage(draft, jsonConfig, client), draft);
+  client.streamSimple = () => streamOf(message('{"texts":["変更。","別の本文。"]}'));
+  assert.deepEqual((await correctMessage(draft, jsonConfig, client)).content, [
+    { type: "text", text: "変更。" }, draft.content[1], draft.content[2],
+  ]);
+});
+
+test("JSON validation still blocks invalid JSON, empty text, incomplete replies, and corrupted markers", async () => {
+  for (const reply of [
+    message("not JSON"), message('{"texts":["OK"]} trailing'), message('{"texts":["OK"]'),
+    message('{"texts":[]}'), message('[]'), message('{"texts":["", " "]}'), message('""'),
+    message('{"texts":["OK"]}', { stopReason: "length" }),
+    message('{"texts":["OK"]}', { stopReason: "error", errorMessage: "secret" }),
+    message("", { stopReason: "toolUse", content: [{ type: "toolCall", id: "1", name: "test", arguments: {} }] }),
+  ]) {
+    const client: GateClient = { find: () => testModel, streamSimple: () => streamOf(reply) };
+    await assert.rejects(correctMessage(message("hello"), jsonConfig, client));
+  }
+  for (const mutation of ["missing", "duplicated", "reordered", "unknown"]) {
+    const client: GateClient = {
+      find: () => testModel,
+      streamSimple: (_model, context) => {
+        const input = JSON.parse(context.messages[0].content as string) as { texts: string[] };
+        const [first, second] = input.texts[0].match(/⟦JP_GATE_[^⟧]+⟧/g)!;
+        let texts = [`先頭 ${first}。`, `末尾 ${second}。`];
+        if (mutation === "missing") texts[0] = "先頭。";
+        if (mutation === "duplicated") texts[1] += first;
+        if (mutation === "reordered") texts.reverse();
+        if (mutation === "unknown") texts.push("⟦JP_GATE_fake⟧");
+        return streamOf(message(JSON.stringify({ texts })));
+      },
+    };
+    await assert.rejects(correctMessage(message("First `first()`.\n\nSecond `second()`."), jsonConfig, client), /マーカー/);
+  }
+});
+
+test("unfamiliar JSON objects retain valid escaping when protected code is restored", async () => {
+  const original = 'Hello.\n```js\nconsole.log("hello\\nworld");\n```\n';
+  const client: GateClient = {
+    find: () => testModel,
+    streamSimple: (_model, context) => {
+      const input = JSON.parse(context.messages[0].content as string) as { texts: string[] };
+      return streamOf(message(JSON.stringify({ result: input.texts[0].replace("Hello.", "こんにちは。") })));
+    },
+  };
+  const corrected = await correctMessage(message(original), jsonConfig, client);
+  assert.equal(corrected.content[0].type, "text");
+  if (corrected.content[0].type === "text") {
+    assert.deepEqual(JSON.parse(corrected.content[0].text), { result: original.replace("Hello.", "こんにちは。") });
   }
 });
 

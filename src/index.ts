@@ -12,6 +12,7 @@ export default function japaneseGateExtension(pi: ExtensionAPI): void {
   pi.registerFlag("jp-gate", { type: "string", description: "Japanese LLM gate: on | off" });
   pi.registerFlag("jp-gate-model", { type: "string", description: "Gate model in provider/model-id format" });
   pi.registerFlag("jp-gate-config", { type: "string", description: "Additional Japanese gate JSON configuration file" });
+  pi.registerFlag("jp-gate-validation", { type: "string", description: "Gate output validation: strict | json" });
 
   const notify = (message: string, level: "info" | "warning" | "error" = "info") => {
     if (latestCtx?.hasUI) latestCtx.ui.notify(message, level);
@@ -73,8 +74,8 @@ export default function japaneseGateExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("jp-gate", {
-    description: "日本語補正 LLM: on | off | status | reload | model provider/model-id",
-    getArgumentCompletions: (prefix) => ["on", "off", "status", "reload", "model"]
+    description: "日本語補正 LLM: on | off | status | reload | model provider/model-id | validation strict/json",
+    getArgumentCompletions: (prefix) => ["on", "off", "status", "reload", "model", "validation strict", "validation json"]
       .filter((value) => value.startsWith(prefix)).map((value) => ({ value, label: value })),
     handler: async (args, ctx) => {
       latestCtx = ctx;
@@ -90,8 +91,14 @@ export default function japaneseGateExtension(pi: ExtensionAPI): void {
           }
           config = { ...config, gate: { ...config.gate, model: rest[0] } };
           notify(`Gate モデル: ${rest[0]}（このセッションのみ）`);
+        } else if (action === "validation") {
+          if (rest.length !== 1 || (rest[0] !== "strict" && rest[0] !== "json")) {
+            throw new Error("/jp-gate validation strict | json と指定してください。");
+          }
+          config = { ...config, validationMode: rest[0] };
+          notify(`Gate 応答の検証: ${rest[0]}（このセッションのみ）`);
         } else {
-          if (rest.length > 0) throw new Error("/jp-gate on | off | status | reload | model provider/model-id");
+          if (rest.length > 0) throw new Error("/jp-gate on | off | status | reload | model provider/model-id | validation strict/json");
           if (action === "on" || action === "off") {
             if (action === "on" && configError) throw new Error(`${configError} /jp-gate reload で再読み込みしてください。`);
             config = { ...config, enabled: action === "on" };
@@ -103,11 +110,12 @@ export default function japaneseGateExtension(pi: ExtensionAPI): void {
             notify([
               `日本語 Gate: ${config.enabled ? "ON" : "OFF"}`,
               `Gate モデル: ${config.gate.model ?? "未設定"}`,
+              `応答の検証: ${config.validationMode}`,
               `失敗時: ${config.failureMode}; 制限: ${config.gate.timeoutMs}ms / ${config.gate.maxTokens} tokens`,
               `設定ファイル: ${files.length ? files.join(", ") : "なし（既定値／CLI）"}`,
               ...(configError ? [`設定エラー: ${configError}`] : []),
             ].join("\n"));
-          } else throw new Error("/jp-gate on | off | status | reload | model provider/model-id");
+          } else throw new Error("/jp-gate on | off | status | reload | model provider/model-id | validation strict/json");
         }
         providerGate?.install();
         status();

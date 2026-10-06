@@ -60,17 +60,26 @@ export function protectText(text: string): ProtectedText {
 
 /** Reject corrupted/missing/duplicated/reordered placeholders before emitting any draft. */
 export function restoreText(output: string, source: ProtectedText): string {
+  return restoreTexts([output], [source])[0];
+}
+
+/** Check markers across all blocks when a JSON-valid reply splits or combines the prose. */
+export function restoreTexts(output: string[], sources: ProtectedText[]): string[] {
+  const parts = sources.flatMap((source) => source.parts);
+  const combined = output.join("\n\n");
   let previous = -1;
-  for (const { token } of source.parts) {
-    const index = output.indexOf(token);
-    if (index < 0 || index <= previous || output.indexOf(token, index + token.length) >= 0) {
+  for (const { token } of parts) {
+    const index = combined.indexOf(token);
+    if (index < 0 || index <= previous || combined.indexOf(token, index + token.length) >= 0) {
       throw new Error("Gate モデルがコード・URL の保護用マーカーを変更しました。");
     }
     previous = index;
   }
-  let restored = output;
-  for (const { token, original } of source.parts) restored = restored.replace(token, () => original);
-  if (/⟦JP_GATE_[^⟧]*⟧/.test(restored) && !source.parts.some((part) => part.original.includes("⟦JP_GATE_"))) {
+  const restored = output.map((text) => {
+    for (const { token, original } of parts) text = text.replace(token, () => original);
+    return text;
+  });
+  if (/⟦JP_GATE_[^⟧]*⟧/.test(restored.join("\n\n")) && !parts.some((part) => part.original.includes("⟦JP_GATE_"))) {
     throw new Error("Gate モデルが未知の保護用マーカーを生成しました。");
   }
   return restored;

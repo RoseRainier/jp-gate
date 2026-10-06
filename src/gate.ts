@@ -3,7 +3,7 @@ import type { AssistantMessage, Context, Model, ModelsSimpleStreamOptions, Usage
 import type { GateConfig } from "./config.ts";
 import { splitModel } from "./config.ts";
 import { GATE_PROMPT } from "./gate-prompt.ts";
-import { protectText, restoreText } from "./protected-text.ts";
+import { protectText, restoreText, restoreTexts } from "./protected-text.ts";
 
 export { GATE_PROMPT } from "./gate-prompt.ts";
 
@@ -42,7 +42,7 @@ function isUnchangedSplit(output: string[], source: string[]): boolean {
   return index === output.length;
 }
 
-function parseReply(text: string, source: string[]): string[] {
+function parseReply(text: string, source: string[], mode: GateConfig["validationMode"]): { texts: string[]; rawJson?: boolean } {
   let value = text.trim();
   // Some providers still wrap a JSON answer; accept only one complete JSON fence.
   const fence = /^```(?:json)?\s*\n([\s\S]*?)\n```\s*$/i.exec(value);
@@ -50,6 +50,18 @@ function parseReply(text: string, source: string[]): string[] {
   let parsed: unknown;
   try { parsed = JSON.parse(value); }
   catch { throw new Error("Gate モデルの応答が有効な JSON ではありません。"); }
+  if (mode === "json") {
+    if (typeof parsed === "string") return { texts: [parsed] };
+    const texts: unknown = Array.isArray(parsed) ? parsed :
+      typeof parsed === "object" && parsed !== null ? (parsed as { texts?: unknown }).texts : undefined;
+    if (typeof texts === "string") return { texts: [texts] };
+    if (Array.isArray(texts) && texts.every((part) => typeof part === "string")) {
+      if (texts.length > source.length && isUnchangedSplit(texts, source)) return { texts: source };
+      return { texts };
+    }
+    // An unfamiliar JSON shape remains JSON; do not guess which fields contain prose.
+    return { texts: [JSON.stringify(parsed)], rawJson: true };
+  }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw new Error("Gate モデルの応答形式が不正です。");
   }
@@ -59,10 +71,10 @@ function parseReply(text: string, source: string[]): string[] {
   }
   if (texts.length !== source.length) {
     // Never guess separators for translated/changed fragments or fall through to an unreviewed draft.
-    if (texts.length > source.length && isUnchangedSplit(texts, source)) return source;
+    if (texts.length > source.length && isUnchangedSplit(texts, source)) return { texts: source };
     throw new Error(`Gate モデルが文章の数を変更しました（入力: ${source.length}、出力: ${texts.length}）。`);
   }
-  return texts as string[];
+  return { texts: texts as string[] };
 }
 
 /** Bound waiting even when a custom provider ignores AbortSignal. */
@@ -114,21 +126,33 @@ export async function correctMessage(
     // Do not expose provider payload/error strings (they can contain draft text or secrets).
     throw new Error(`Gate モデルが正常に校正を完了しませんでした (${reply.stopReason})。`);
   }
-  const output = parseReply(reply.content.filter((part) => part.type === "text").map((part) => part.text).join(""), protectedTexts.map((part) => part.masked));
-  const restored = output.map((text, i) => {
+  const parsed = parseReply(reply.content.filter((part) => part.type === "text").map((part) => part.text).join(""), protectedTexts.map((part) => part.masked), config.validationMode);
+  const output = parsed.texts;
+  let restored: string[];
+  if (config.validationMode === "json") {
+    if (!output.some((text) => text.trim())) throw new Error("Gate モデルが空の文章を返しました。");
+    // When retaining a JSON object, restored literals must stay escaped inside its strings.
+    const sources = parsed.rawJson ? protectedTexts.map((source) => ({
+      ...source, parts: source.parts.map((part) => ({ ...part, original: JSON.stringify(part.original).slice(1, -1) })),
+    })) : protectedTexts;
+    restored = restoreTexts(output, sources);
+    if (restored.length !== texts.length) restored = [restored.join("\n\n")];
+  } else restored = output.map((text, i) => {
     if (texts[i].text.trim() && !text.trim()) throw new Error("Gate モデルが空の文章を返しました。");
     return restoreText(text, protectedTexts[i]);
   });
   let index = 0;
   return {
     ...message,
-    content: message.content.map((part) => {
-      if (part.type !== "text") return part;
+    content: message.content.flatMap<AssistantMessage["content"][number]>((part) => {
+      if (part.type !== "text") return [part];
+      // A changed block count is emitted at the first text slot; keep every thinking/tool block.
+      if (restored.length !== texts.length && index > 0) return [];
       const text = restored[index++];
-      if (text === part.text) return part;
+      if (text === part.text) return [part];
       // A provider signature represents the original text; never attach it to rewritten text.
       const { textSignature: _signature, ...rest } = part;
-      return { ...rest, text };
+      return [{ ...rest, text }];
     }),
   };
 }

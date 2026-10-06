@@ -10,18 +10,21 @@ export interface GateConfig {
     temperature: number;
   };
   failureMode: "block" | "passthrough";
+  validationMode: "strict" | "json";
 }
 
 export interface FlagOverrides {
   enabled?: boolean;
   model?: string;
   configPath?: string;
+  validationMode?: GateConfig["validationMode"];
 }
 
 export const DEFAULT_CONFIG: GateConfig = {
   enabled: true,
   gate: { timeoutMs: 60_000, maxTokens: 8192, temperature: 0 },
   failureMode: "block",
+  validationMode: "strict",
 };
 
 export function splitModel(value: string): { provider: string; id: string } {
@@ -47,7 +50,7 @@ function checkKeys(value: Record<string, unknown>, keys: string[], label: string
 
 export function mergeConfig(base: GateConfig, input: unknown): GateConfig {
   const source = object(input, "jp-gate");
-  checkKeys(source, ["enabled", "gate", "failureMode"], "jp-gate");
+  checkKeys(source, ["enabled", "gate", "failureMode", "validationMode"], "jp-gate");
   const next: GateConfig = { ...base, gate: { ...base.gate } };
   if ("enabled" in source) {
     if (typeof source.enabled !== "boolean") throw new Error("enabled は true / false で指定してください。");
@@ -58,6 +61,12 @@ export function mergeConfig(base: GateConfig, input: unknown): GateConfig {
       throw new Error("failureMode は block / passthrough で指定してください。");
     }
     next.failureMode = source.failureMode;
+  }
+  if ("validationMode" in source) {
+    if (source.validationMode !== "strict" && source.validationMode !== "json") {
+      throw new Error("validationMode は strict / json で指定してください。");
+    }
+    next.validationMode = source.validationMode;
   }
   if ("gate" in source) {
     const gate = object(source.gate, "gate");
@@ -105,6 +114,13 @@ export function parseFlags(getFlag: (name: string) => boolean | string | undefin
     if (typeof configPath !== "string" || !configPath.trim()) throw new Error("--jp-gate-config にファイルパスを指定してください。");
     result.configPath = configPath;
   }
+  const validationMode = getFlag("jp-gate-validation");
+  if (validationMode !== undefined) {
+    if (validationMode !== "strict" && validationMode !== "json") {
+      throw new Error("--jp-gate-validation は strict / json を指定してください。");
+    }
+    result.validationMode = validationMode;
+  }
   return result;
 }
 
@@ -131,5 +147,6 @@ export async function loadConfig(cwd: string, agentDir: string, flags: FlagOverr
   }
   if (flags.enabled !== undefined) config.enabled = flags.enabled;
   if (flags.model !== undefined) config.gate.model = flags.model;
+  if (flags.validationMode !== undefined) config.validationMode = flags.validationMode;
   return { config, files };
 }

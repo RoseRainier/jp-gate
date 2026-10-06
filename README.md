@@ -58,6 +58,8 @@ pi -e ./extensions/jp-correct.ts --jp-gate off
 | `/jp-gate off` | 補正を無効化 |
 | `/jp-gate status` | 現在のモデル・設定・ON/OFF を表示 |
 | `/jp-gate model provider/model-id` | Gate モデルを変更 |
+| `/jp-gate validation json` | JSON 構文を確認し、補正結果の形式変更を許容 |
+| `/jp-gate validation strict` | 本文の個数・形式も検証（既定） |
 | `/jp-gate reload` | 設定ファイルと起動時の CLI 指定を再読み込み |
 
 対話コマンドによる変更は現在のセッション内で有効です。永続化したい場合は設定ファイルを編集してください。
@@ -75,7 +77,8 @@ pi -e ./extensions/jp-correct.ts --jp-gate off
     "maxTokens": 8192,
     "temperature": 0
   },
-  "failureMode": "block"
+  "failureMode": "block",
+  "validationMode": "strict"
 }
 ```
 
@@ -97,8 +100,13 @@ pi -e ./extensions/jp-correct.ts --jp-gate-config ./my-settings.json
 | `gate.maxTokens` | `8192` | 校正結果の出力トークン上限。長文では増やす |
 | `gate.temperature` | `0` | Gate モデルの temperature |
 | `failureMode` | `block` | `block` または `passthrough` |
+| `validationMode` | `strict` | `strict` または `json`。`json` は本文の個数・JSON の構造変更を許容 |
 
 `provider/model-id` は最初の `/` で分割するため、`openrouter/vendor/model-id` のようなモデル ID も使えます。
+
+補正結果が元の応答と異なる形式でも通したい場合は、設定ファイルに `"validationMode": "json"` を追加します。起動時は `--jp-gate-validation json`、対話中は `/jp-gate validation json` でも切り替えられます。不正な JSON は引き続き失敗として扱います。
+
+`json` モードでは `{"texts":["本文"]}`、`{"texts":"本文"}`、文字列の配列、JSON 文字列から本文を取り出します。それ以外の有効な JSON は JSON のまま出力します。本文の個数が変わった場合は、補正後の本文を空行で結合して最初の本文位置に出力します。thinking とツール呼び出しは保持します。コード・URL の保護マーカーと正常終了はこのモードでも検証し、空の本文は失敗として扱います。
 
 ## 補正とエラーの扱い
 
@@ -106,8 +114,8 @@ pi -e ./extensions/jp-correct.ts --jp-gate-config ./my-settings.json
 - メインモデルのストリームを保持し、校正後に通常の Pi ストリームとして出力します。補正前の本文は TUI・print・JSON・RPC の通常出力やセッション履歴へ流しません。
 - Gate に渡すのはマスク済みの回答本文です。会話履歴、メインモデルの system prompt、thinking、ツールの定義・引数は渡しません。
 - Markdown のコードフェンス、インラインコード、インデントされたコード、URL、リンク先、HTML タグは原文を保持します。本文の見出しやリストなどは LLM に構造維持を指示します。
-- 校正結果の JSON 形式・本文の個数・保護マーカーを検証します。空の結果、出力上限による途中終了、保護マーカーの欠落・重複・順序変更は失敗として扱います。
-- 本文が改行位置で複数の配列要素に分かれただけで、全要素の内容・順序が原文と完全に一致する場合は、原文の改行と要素構造を復元します。分割された本文に翻訳・変更・欠落がある場合は失敗として扱い、推測で結合しません。
+- 校正結果の JSON 形式・保護マーカーを検証します。`strict` モードでは本文の個数と `texts` 配列の形式も検証します。空の結果、出力上限による途中終了、保護マーカーの欠落・重複・順序変更は失敗として扱います。
+- 本文が改行位置で複数の配列要素に分かれただけで、全要素の内容・順序が原文と完全に一致する場合は、原文の改行と要素構造を復元します。`strict` モードでは、分割された本文に翻訳・変更・欠落がある場合は失敗として扱います。`json` モードでは変更された分割結果も受け入れます。
 - `block` では失敗時に未補正の本文を出しません。その応答に含まれるツール呼び出しも実行しません。`passthrough` を明示した場合は、失敗時に警告を出し、元の応答を出力します。
 - 中断操作は Gate にも伝わります。中断時は `passthrough` 設定でも元の応答を出しません。
 - OFF 時は Gate LLM を呼ばず、元のモデルのストリーミングを使います。
