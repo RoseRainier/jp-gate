@@ -18,23 +18,14 @@ test("configuration validates types, limits, and typos", () => {
   assert.equal(result.gate.timeoutMs, 60000);
   assert.equal(DEFAULT_CONFIG.gate.model, undefined);
   assert.equal(result.enabled, false);
-  assert.equal(result.validationMode, "strict");
-  assert.equal(mergeConfig(result, { validationMode: "json" }).validationMode, "json");
-  for (const promptFile of [false, null, "", " \t"]) {
-    assert.throws(() => mergeConfig(DEFAULT_CONFIG, { gate: { promptFile } }), /Markdown/);
-    assert.throws(() => parseFlags((key) => key === "jp-gate-prompt" ? promptFile as string : undefined), /Markdown/);
-  }
-  assert.equal(mergeConfig(result, { gate: { promptFile: "custom.md" } }).gate.promptFile, "custom.md");
 });
 
 test("CLI flags provide on/off overrides without boolean-default conflicts", () => {
   assert.deepEqual(parseFlags(() => undefined), {});
-  const flags: Record<string, string> = { "jp-gate": "off", "jp-gate-model": "p/m", "jp-gate-config": "./custom.json", "jp-gate-validation": "json", "jp-gate-prompt": "./custom.md" };
-  assert.deepEqual(parseFlags((key) => flags[key]), { enabled: false, model: "p/m", configPath: "./custom.json", validationMode: "json", promptFile: "./custom.md" });
+  const flags: Record<string, string> = { "jp-gate": "off", "jp-gate-model": "p/m", "jp-gate-config": "./custom.json" };
+  assert.deepEqual(parseFlags((key) => flags[key]), { enabled: false, model: "p/m", configPath: "./custom.json" });
   assert.throws(() => parseFlags(() => "false"));
-  for (const invalid of [true, "off", ""]) {
-    assert.throws(() => parseFlags((key) => key === "jp-gate-validation" ? invalid : undefined), /strict \/ json/);
-  }
+
 });
 
 test("settings merge in global < project < explicit file < CLI order", async () => {
@@ -44,18 +35,14 @@ test("settings merge in global < project < explicit file < CLI order", async () 
     const cwd = join(root, "project");
     await mkdir(agentDir);
     await mkdir(join(cwd, ".pi"), { recursive: true });
-    await writeFile(join(agentDir, "jp-gate.json"), JSON.stringify({ enabled: false, gate: { model: "global/m", timeoutMs: 1500 }, validationMode: "json" }));
-    assert.equal((await loadConfig(cwd, agentDir)).config.validationMode, "json");
-    await writeFile(join(cwd, ".pi", "jp-gate.json"), JSON.stringify({ enabled: true, gate: { model: "project/m" }, validationMode: "strict" }));
-    assert.equal((await loadConfig(cwd, agentDir)).config.validationMode, "strict");
-    await writeFile(join(cwd, "extra.json"), JSON.stringify({ gate: { model: "extra/m", maxTokens: 2048 }, validationMode: "json" }));
-    assert.equal((await loadConfig(cwd, agentDir, { configPath: "extra.json" })).config.validationMode, "json");
-    const loaded = await loadConfig(cwd, agentDir, { configPath: "extra.json", model: "cli/m", enabled: false, validationMode: "strict" });
+    await writeFile(join(agentDir, "jp-gate.json"), JSON.stringify({ enabled: false, gate: { model: "global/m", timeoutMs: 1500 } }));
+    await writeFile(join(cwd, ".pi", "jp-gate.json"), JSON.stringify({ enabled: true, gate: { model: "project/m" } }));
+    await writeFile(join(cwd, "extra.json"), JSON.stringify({ gate: { model: "extra/m", maxTokens: 2048 } }));
+    const loaded = await loadConfig(cwd, agentDir, { configPath: "extra.json", model: "cli/m", enabled: false });
     assert.equal(loaded.config.enabled, false);
     assert.equal(loaded.config.gate.model, "cli/m");
     assert.equal(loaded.config.gate.timeoutMs, 1500);
     assert.equal(loaded.config.gate.maxTokens, 2048);
-    assert.equal(loaded.config.validationMode, "strict");
     assert.equal(loaded.files.length, 3);
     await assert.rejects(loadConfig(cwd, agentDir, { configPath: "missing.json" }), /読み込めません/);
     await writeFile(join(cwd, ".pi", "jp-gate.json"), "{bad");

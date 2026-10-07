@@ -7,11 +7,11 @@ import { join, resolve } from "node:path";
 const root = resolve(import.meta.dirname, "..");
 const cli = join(root, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js");
 const scratch = mkdtempSync(join(tmpdir(), "jp-gate-e2e-"));
-const expected = "セットアップは完了しました。設定を確認してください。 `npm run dev`";
+const expected = "セットアップは完了したわ。設定を確認してね。 `npm run dev`";
 const originalParagraphs = "こんばんは。私はいつも通り元気よ。\n\nあなたこそ、今日どれくらい寝てないのかしら。数字で答えてもらえると助かるわ。";
 let count = 0;
 
-function run(name, args = [], config, model = "draft", prepare) {
+function run(name, args = [], config, model = "draft") {
   const cwd = join(scratch, name);
   const agentDir = join(cwd, "agent");
   mkdirSync(agentDir, { recursive: true });
@@ -20,7 +20,6 @@ function run(name, args = [], config, model = "draft", prepare) {
     mkdirSync(join(cwd, ".pi"));
     writeFileSync(join(cwd, ".pi/jp-gate.json"), typeof config === "string" ? config : JSON.stringify(config));
   }
-  prepare?.(cwd, agentDir);
   const session = join(cwd, "session.jsonl");
   const result = spawnSync(process.execPath, [cli,
     "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes",
@@ -44,45 +43,16 @@ try {
   assert.ok(!on.history.includes("Setup is"), "raw draft persisted in the session");
   assert.ok(on.history.includes("jp-gate-usage"));
 
-  const split = run("unchanged-split", ["--jp-gate-model", "jp-gate-fixture/split-editor"], undefined, "paragraph-draft");
-  assert.equal(split.assistant.stopReason, "stop");
-  assert.deepEqual(split.assistant.content, [{ type: "text", text: originalParagraphs }]);
-  const savedMessages = split.history.trim().split("\n").map((line) => JSON.parse(line));
+  const unchanged = run("unchanged-paragraphs", ["--jp-gate-model", "jp-gate-fixture/identity-editor"], undefined, "paragraph-draft");
+  assert.equal(unchanged.assistant.stopReason, "stop");
+  assert.deepEqual(unchanged.assistant.content, [{ type: "text", text: originalParagraphs }]);
+  const savedMessages = unchanged.history.trim().split("\n").map((line) => JSON.parse(line));
   assert.equal(savedMessages.findLast((entry) => entry.message?.role === "assistant").message.content[0].text, originalParagraphs);
   assert.equal(savedMessages.filter((entry) => entry.customType === "jp-gate-usage").length, 1);
-  assert.ok(!split.stderr.includes("文章の数"));
 
-  const changedSplit = run("changed-split", ["--jp-gate-model", "jp-gate-fixture/changed-split-editor"], undefined, "paragraph-draft");
-  assert.equal(changedSplit.assistant.stopReason, "error");
-  assert.deepEqual(changedSplit.assistant.content, []);
-  assert.ok(changedSplit.assistant.errorMessage.includes("入力: 1、出力: 2"));
-  assert.ok(!changedSplit.stdout.includes("こんばんは。"));
-  assert.ok(!changedSplit.history.includes("こんばんは。"));
-
-  const flexibleConfig = { gate: { model: "jp-gate-fixture/changed-split-editor" }, validationMode: "json" };
-  const flexibleExpected = "変更された文章。\n\n" + originalParagraphs.split("\n\n")[1];
-  const flexible = run("json-split", [], flexibleConfig, "paragraph-draft");
-  assert.equal(flexible.assistant.stopReason, "stop");
-  assert.deepEqual(flexible.assistant.content, [{ type: "text", text: flexibleExpected }]);
-  assert.ok(!flexible.stdout.includes("こんばんは。"));
-  assert.ok(!flexible.history.includes("こんばんは。"));
-  const flexibleSaved = flexible.history.trim().split("\n").map((line) => JSON.parse(line));
-  assert.equal(flexibleSaved.findLast((entry) => entry.message?.role === "assistant").message.content[0].text, flexibleExpected);
-  assert.equal(flexibleSaved.filter((entry) => entry.customType === "jp-gate-usage").length, 1);
-
-  const flexibleFlag = run("json-split-flag", ["--jp-gate-validation", "json", "--jp-gate-model", "jp-gate-fixture/changed-split-editor"], undefined, "paragraph-draft");
-  assert.deepEqual(flexibleFlag.assistant.content, flexible.assistant.content);
-  const strictOverride = run("strict-overrides-json", ["--jp-gate-validation", "strict"], flexibleConfig, "paragraph-draft");
-  assert.equal(strictOverride.assistant.stopReason, "error");
-  assert.deepEqual(strictOverride.assistant.content, []);
-  assert.ok(!strictOverride.history.includes("こんばんは。"));
-
-  const jsonInvalid = run("json-invalid", ["--jp-gate-validation", "json", "--jp-gate-model", "jp-gate-fixture/bad-editor"]);
-  assert.equal(jsonInvalid.assistant.stopReason, "error");
-  assert.deepEqual(jsonInvalid.assistant.content, []);
-  assert.ok(jsonInvalid.assistant.errorMessage.includes("有効な JSON"));
-  assert.ok(!jsonInvalid.stdout.includes("Setup is"));
-  assert.ok(!jsonInvalid.history.includes("Setup is"));
+  const edited = run("edited-paragraphs", ["--jp-gate-model", "jp-gate-fixture/paragraph-editor"], undefined, "paragraph-draft");
+  assert.equal(edited.assistant.stopReason, "stop");
+  assert.deepEqual(edited.assistant.content, [{ type: "text", text: originalParagraphs.replace("元気よ。", "元気だわ。") }]);
 
   const off = run("off", ["--jp-gate", "off"]);
   assert.ok(off.assistant.content[0].text.includes("Setup is"));
@@ -115,54 +85,6 @@ try {
   const passthrough = run("passthrough", [], { gate: { model: "jp-gate-fixture/bad-editor" }, failureMode: "passthrough" });
   assert.ok(passthrough.assistant.content[0].text.includes("Setup is"));
   assert.ok(passthrough.stderr.includes("未補正"));
-
-  const promptEditor = ["--jp-gate-model", "jp-gate-fixture/prompt-editor"];
-  const created = run("prompt-created", ["--jp-gate-model", "jp-gate-fixture/editor"]);
-  assert.equal(created.assistant.content[0].text, expected);
-  const globalPrompt = join(scratch, "prompt-created", "agent", "jp-gate-prompt.md");
-  assert.ok(readFileSync(globalPrompt, "utf8").includes("日本語"));
-  writeFileSync(globalPrompt, "# 保持するカスタム指示\nJSON で回答。");
-  const preserved = run("prompt-created", promptEditor);
-  assert.equal(preserved.assistant.content[0].text, "# 保持するカスタム指示 `npm run dev`");
-  assert.equal(readFileSync(globalPrompt, "utf8"), "# 保持するカスタム指示\nJSON で回答。");
-
-  const projectPrompt = run("prompt-project", promptEditor, undefined, "draft", (cwd, agentDir) => {
-    writeFileSync(join(agentDir, "jp-gate-prompt.md"), "# 全体の指示");
-    mkdirSync(join(cwd, ".pi"));
-    writeFileSync(join(cwd, ".pi", "jp-gate-prompt.md"), "# プロジェクトの指示");
-  });
-  assert.equal(projectPrompt.assistant.content[0].text, "# プロジェクトの指示 `npm run dev`");
-
-  const explicitPrompt = run("prompt-cli", [...promptEditor, "--jp-gate-prompt", "custom.md"], { gate: { promptFile: "config.md" } }, "draft", (cwd, agentDir) => {
-    writeFileSync(join(agentDir, "jp-gate-prompt.md"), "# 全体の指示");
-    writeFileSync(join(cwd, ".pi", "jp-gate-prompt.md"), "# プロジェクトの指示");
-    writeFileSync(join(cwd, "config.md"), "# 設定で指定した指示");
-    writeFileSync(join(cwd, "custom.md"), "# CLI で指定した指示");
-  });
-  assert.equal(explicitPrompt.assistant.content[0].text, "# CLI で指定した指示 `npm run dev`");
-
-  const configPrompt = run("prompt-config", promptEditor, { gate: { promptFile: "custom.md" } }, "draft", (cwd) => {
-    writeFileSync(join(cwd, "custom.md"), "# 設定で指定した指示");
-  });
-  assert.equal(configPrompt.assistant.content[0].text, "# 設定で指定した指示 `npm run dev`");
-
-  const missingPrompt = run("prompt-missing", [...promptEditor, "--jp-gate-prompt", "missing.md"]);
-  assert.equal(missingPrompt.assistant.stopReason, "error");
-  assert.deepEqual(missingPrompt.assistant.content, []);
-  assert.ok(missingPrompt.stderr.includes("プロンプトを読み込めません"));
-  assert.ok(!missingPrompt.stdout.includes("Setup is"));
-  assert.ok(!missingPrompt.history.includes("Setup is"));
-
-  const emptyPrompt = run("prompt-empty", promptEditor, undefined, "draft", (_cwd, agentDir) => {
-    writeFileSync(join(agentDir, "jp-gate-prompt.md"), " \n");
-  });
-  assert.equal(emptyPrompt.assistant.stopReason, "error");
-  assert.deepEqual(emptyPrompt.assistant.content, []);
-  assert.ok(emptyPrompt.stderr.includes("プロンプトが空"));
-  assert.equal(readFileSync(join(scratch, "prompt-empty", "agent", "jp-gate-prompt.md"), "utf8"), " \n");
-
-  const promptOff = run("prompt-missing-off", ["--jp-gate", "off", "--jp-gate-prompt", "missing.md"]);
-  assert.ok(promptOff.assistant.content[0].text.includes("Setup is"));
 
   console.log(`Pi CLI integration: ${count} cases passed (offline, no API calls).`);
 } finally { rmSync(scratch, { recursive: true, force: true }); }

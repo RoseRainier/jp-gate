@@ -7,7 +7,7 @@ export default function fixture(pi: ExtensionAPI): void {
     api: "jp-gate-fixture-api",
     apiKey: "fixture-key",
     baseUrl: "http://unused.invalid",
-    models: ["draft", "editor", "bad-editor", "paragraph-draft", "split-editor", "changed-split-editor", "prompt-editor"].map((id) => ({
+    models: ["draft", "editor", "bad-editor", "paragraph-draft", "identity-editor", "paragraph-editor"].map((id) => ({
       id, name: id, reasoning: false, input: ["text"],
       contextWindow: 32768, maxTokens: 8192,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -18,23 +18,16 @@ export default function fixture(pi: ExtensionAPI): void {
       if (model.id === "paragraph-draft") {
         text = "こんばんは。私はいつも通り元気よ。\n\nあなたこそ、今日どれくらい寝てないのかしら。数字で答えてもらえると助かるわ。";
       }
-      if (model.id === "editor" || model.id === "prompt-editor") {
+      if (model.id === "editor") {
         const last = context.messages.at(-1);
         if (!last || last.role !== "user" || typeof last.content !== "string") throw new Error("missing gate input");
-        const input = JSON.parse(last.content) as { texts: string[] };
-        const markers = input.texts[0].match(/⟦JP_GATE_[^⟧]+⟧/g) ?? [];
-        const system = context.messages.find((part) => part.role === "system");
-        const systemPrompt = system && typeof system.content === "string" ? system.content : "";
-        const prose = model.id === "prompt-editor" ? systemPrompt.split("\n")[0] : "セットアップは完了しました。設定を確認してください。";
-        text = JSON.stringify({ texts: [`${prose} ${markers.join(" ")}`] });
-      } else if (model.id === "split-editor" || model.id === "changed-split-editor") {
+        if (last.content !== "Setup is 完了。请确认 설정。 `npm run dev`") throw new Error("gate input changed");
+        text = "セットアップは完了したわ。設定を確認してね。 `npm run dev`";
+      } else if (model.id === "identity-editor" || model.id === "paragraph-editor") {
         const last = context.messages.at(-1);
         if (!last || last.role !== "user" || typeof last.content !== "string") throw new Error("missing gate input");
-        const input = JSON.parse(last.content) as { texts: string[] };
-        const texts = input.texts.flatMap((part) => part.split("\n\n"));
-        if (model.id === "changed-split-editor") texts[0] = "変更された文章。";
-        text = JSON.stringify({ texts });
-      } else if (model.id === "bad-editor") text = "invalid JSON";
+        text = model.id === "identity-editor" ? last.content : last.content.replace("元気よ。", "元気だわ。");
+      } else if (model.id === "bad-editor") text = "";
       const result = response(model, text);
       const stream = createAssistantMessageEventStream();
       const partial = { ...result, stopReason: "pending" as const };

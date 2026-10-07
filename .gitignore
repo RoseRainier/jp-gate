@@ -6,7 +6,6 @@ coverage/
 !.env.example
 .pi/
 /jp-gate.json
-/jp-gate-prompt.md
 *.local.json
 *.log
 .DS_Store

@@ -1,35 +1,27 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
-import { loadPrompt, type GatePrompt } from "./prompt.ts";
 
 export interface GateConfig {
   enabled: boolean;
   gate: {
     model?: string;
-    promptFile?: string;
     timeoutMs: number;
     maxTokens: number;
     temperature: number;
   };
   failureMode: "block" | "passthrough";
-  validationMode: "strict" | "json";
-  /** Loaded runtime snapshot; this field is not a JSON configuration key. */
-  prompt?: GatePrompt;
 }
 
 export interface FlagOverrides {
   enabled?: boolean;
   model?: string;
   configPath?: string;
-  validationMode?: GateConfig["validationMode"];
-  promptFile?: string;
 }
 
 export const DEFAULT_CONFIG: GateConfig = {
   enabled: true,
   gate: { timeoutMs: 60_000, maxTokens: 8192, temperature: 0 },
   failureMode: "block",
-  validationMode: "strict",
 };
 
 export function splitModel(value: string): { provider: string; id: string } {
@@ -55,7 +47,7 @@ function checkKeys(value: Record<string, unknown>, keys: string[], label: string
 
 export function mergeConfig(base: GateConfig, input: unknown): GateConfig {
   const source = object(input, "jp-gate");
-  checkKeys(source, ["enabled", "gate", "failureMode", "validationMode"], "jp-gate");
+  checkKeys(source, ["enabled", "gate", "failureMode"], "jp-gate");
   const next: GateConfig = { ...base, gate: { ...base.gate } };
   if ("enabled" in source) {
     if (typeof source.enabled !== "boolean") throw new Error("enabled は true / false で指定してください。");
@@ -67,22 +59,9 @@ export function mergeConfig(base: GateConfig, input: unknown): GateConfig {
     }
     next.failureMode = source.failureMode;
   }
-  if ("validationMode" in source) {
-    if (source.validationMode !== "strict" && source.validationMode !== "json") {
-      throw new Error("validationMode は strict / json で指定してください。");
-    }
-    next.validationMode = source.validationMode;
-  }
   if ("gate" in source) {
     const gate = object(source.gate, "gate");
-    checkKeys(gate, ["model", "promptFile", "timeoutMs", "maxTokens", "temperature"], "gate");
-    if ("promptFile" in gate) {
-      if (typeof gate.promptFile !== "string" || !gate.promptFile.trim()) {
-        throw new Error("gate.promptFile に Markdown ファイルのパスを指定してください。");
-      }
-      next.gate.promptFile = gate.promptFile;
-      delete next.prompt;
-    }
+    checkKeys(gate, ["model", "timeoutMs", "maxTokens", "temperature"], "gate");
     if ("model" in gate) {
       if (typeof gate.model !== "string") throw new Error("gate.model は文字列で指定してください。");
       splitModel(gate.model);
@@ -126,20 +105,6 @@ export function parseFlags(getFlag: (name: string) => boolean | string | undefin
     if (typeof configPath !== "string" || !configPath.trim()) throw new Error("--jp-gate-config にファイルパスを指定してください。");
     result.configPath = configPath;
   }
-  const validationMode = getFlag("jp-gate-validation");
-  if (validationMode !== undefined) {
-    if (validationMode !== "strict" && validationMode !== "json") {
-      throw new Error("--jp-gate-validation は strict / json を指定してください。");
-    }
-    result.validationMode = validationMode;
-  }
-  const promptFile = getFlag("jp-gate-prompt");
-  if (promptFile !== undefined) {
-    if (typeof promptFile !== "string" || !promptFile.trim()) {
-      throw new Error("--jp-gate-prompt に Markdown ファイルのパスを指定してください。");
-    }
-    result.promptFile = promptFile;
-  }
   return result;
 }
 
@@ -166,8 +131,5 @@ export async function loadConfig(cwd: string, agentDir: string, flags: FlagOverr
   }
   if (flags.enabled !== undefined) config.enabled = flags.enabled;
   if (flags.model !== undefined) config.gate.model = flags.model;
-  if (flags.validationMode !== undefined) config.validationMode = flags.validationMode;
-  if (flags.promptFile !== undefined) config.gate.promptFile = flags.promptFile;
-  if (config.enabled) config.prompt = await loadPrompt(cwd, agentDir, config.gate.promptFile);
   return { config, files };
 }
