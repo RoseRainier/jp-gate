@@ -99,12 +99,24 @@ export function mergeConfig(base: GateConfig, input: unknown): GateConfig {
   return next;
 }
 
-export function parseFlags(getFlag: (name: string) => boolean | string | undefined): FlagOverrides {
+/** pi-subagent marks child processes, including ephemeral and nested workers. */
+export function isSubagent(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env.PI_SUBAGENT_DEPTH;
+  if (!raw || !/^\d+$/.test(raw)) return false;
+  const depth = Number(raw);
+  return Number.isSafeInteger(depth) && depth > 0;
+}
+
+export function parseFlags(getFlag: (name: string) => boolean | string | undefined, env: NodeJS.ProcessEnv = process.env): FlagOverrides {
   const result: FlagOverrides = {};
   const enabled = getFlag("jp-gate");
   if (enabled !== undefined) {
     if (enabled !== "on" && enabled !== "off") throw new Error("--jp-gate は on / off を指定してください。");
     result.enabled = enabled === "on";
+  } else if (isSubagent(env)) {
+    // Global/project enabled:true is inherited by workers too. Their output is
+    // internal input for the parent, whose user-facing answer owns correction.
+    result.enabled = false;
   }
   const model = getFlag("jp-gate-model");
   if (model !== undefined) {

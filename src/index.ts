@@ -1,5 +1,5 @@
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_CONFIG, loadConfig, mergeConfig, parseFlags, splitModel, type GateConfig } from "./config.ts";
+import { DEFAULT_CONFIG, isSubagent, loadConfig, mergeConfig, parseFlags, splitModel, type GateConfig } from "./config.ts";
 import { loadPrompt } from "./prompt.ts";
 import { ProviderGate } from "./providers.ts";
 
@@ -34,8 +34,9 @@ export default function japaneseGateExtension(pi: ExtensionAPI): void {
       configError = error instanceof Error ? error.message : String(error);
       // A broken config must not silently turn off the requested gate.
       config = mergeConfig(DEFAULT_CONFIG, {});
-      // An explicit CLI off is still respected, even if a file is malformed.
-      if (pi.getFlag("jp-gate") === "off") config.enabled = false;
+      // Preserve both explicit off and the worker default even on malformed files.
+      const enabled = pi.getFlag("jp-gate");
+      if (enabled === "off" || (enabled === undefined && isSubagent())) config.enabled = false;
       files = [];
       notify(configError, "error");
     }

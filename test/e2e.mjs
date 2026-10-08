@@ -5,13 +5,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
-const cli = join(root, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js");
+const cli = process.env.PI_TEST_CLI ?? join(root, "node_modules/@earendil-works/pi-coding-agent/dist/cli.js");
 const scratch = mkdtempSync(join(tmpdir(), "jp-gate-e2e-"));
 const expected = "セットアップは完了したわ。設定を確認してね。 `npm run dev`";
 const originalParagraphs = "こんばんは。私はいつも通り元気よ。\n\nあなたこそ、今日どれくらい寝てないのかしら。数字で答えてもらえると助かるわ。";
 let count = 0;
 
-function run(name, args = [], config, model = "draft") {
+function run(name, args = [], config, model = "draft", env = {}) {
   const cwd = join(scratch, name);
   const agentDir = join(cwd, "agent");
   mkdirSync(agentDir, { recursive: true });
@@ -26,7 +26,7 @@ function run(name, args = [], config, model = "draft") {
     "-e", join(root, "test/fixtures/provider.ts"), "-e", join(root, "extensions/jp-correct.ts"),
     "--provider", "jp-gate-fixture", "--model", model, "--no-tools", "--thinking", "off",
     "--session", session, "--mode", "json", "-p", ...args, "テスト回答を出してください。",
-  ], { cwd, env: { ...process.env, PI_CODING_AGENT_DIR: agentDir }, encoding: "utf8", timeout: 25000, maxBuffer: 2 * 1024 * 1024 });
+  ], { cwd, env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_SUBAGENT_DEPTH: "0", ...env }, encoding: "utf8", timeout: 25000, maxBuffer: 2 * 1024 * 1024 });
   assert.equal(result.error, undefined, `${name}: ${result.error?.message}`);
   assert.equal(result.status, 0, `${name}: ${result.stderr}`);
   const events = result.stdout.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
@@ -53,6 +53,21 @@ try {
   const edited = run("edited-paragraphs", ["--jp-gate-model", "jp-gate-fixture/paragraph-editor"], undefined, "paragraph-draft");
   assert.equal(edited.assistant.stopReason, "stop");
   assert.deepEqual(edited.assistant.content, [{ type: "text", text: originalParagraphs.replace("元気よ。", "元気だわ。") }]);
+
+  // pi-subagent inherits the globally enabled gate, but its result is internal input
+  // to the parent. Only the parent's user-facing reply should be corrected by default.
+  const childConfig = { enabled: true, gate: { model: "jp-gate-fixture/editor" } };
+  for (const depth of ["1", "2"]) {
+    const child = run(`subagent-${depth}`, [], childConfig, "draft", { PI_SUBAGENT_DEPTH: depth });
+    assert.ok(child.assistant.content[0].text.includes("Setup is"));
+    assert.ok(!child.history.includes("jp-gate-usage"));
+  }
+  const childOn = run("subagent-explicit-on", ["--jp-gate", "on"], childConfig, "draft", { PI_SUBAGENT_DEPTH: "1" });
+  assert.equal(childOn.assistant.content[0].text, expected);
+  assert.equal(childOn.history.split('"customType":"jp-gate-usage"').length - 1, 1);
+  const childBroken = run("subagent-broken-config", [], "{bad", "draft", { PI_SUBAGENT_DEPTH: "1" });
+  assert.ok(childBroken.assistant.content[0].text.includes("Setup is"));
+  assert.ok(!childBroken.history.includes("jp-gate-usage"));
 
   const off = run("off", ["--jp-gate", "off"]);
   assert.ok(off.assistant.content[0].text.includes("Setup is"));

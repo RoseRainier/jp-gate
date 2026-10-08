@@ -45,6 +45,8 @@ pi install -l git:github.com/RoseRainier/jp-gate
 
 補正は既定で ON ですが、Gate 用モデルは未設定です。利用できるモデルを確認し、`provider/model-id` 形式で指定します。
 
+`pi-subagent` の子プロセス（`PI_SUBAGENT_DEPTH` が正の整数）では、共有設定が `enabled: true` でも既定で OFF にします。内部の調査結果と親の回答の両方を補正するのを避け、親のユーザー向け回答に Gate を適用します。子側でも必要な場合は `--jp-gate on` または `/jp-gate on` で明示的に有効化できます。
+
 ```bash
 pi --list-models
 pi --jp-gate on --jp-gate-model openai/gpt-4.1-mini

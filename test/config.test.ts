@@ -28,6 +28,18 @@ test("CLI flags provide on/off overrides without boolean-default conflicts", () 
 
 });
 
+test("workers skip inherited correction unless explicitly enabled", () => {
+  for (const depth of ["1", "2", "10"]) {
+    const env = { PI_SUBAGENT_DEPTH: depth };
+    assert.deepEqual(parseFlags(() => undefined, env), { enabled: false });
+    assert.deepEqual(parseFlags((name) => name === "jp-gate" ? "on" : undefined, env), { enabled: true });
+    assert.deepEqual(parseFlags((name) => name === "jp-gate" ? "off" : undefined, env), { enabled: false });
+  }
+  for (const depth of [undefined, "", "0", "-1", "1.5", "invalid", "Infinity", "9007199254740992"]) {
+    assert.deepEqual(parseFlags(() => undefined, { PI_SUBAGENT_DEPTH: depth }), {});
+  }
+});
+
 test("settings merge in global < project < explicit file < CLI order", async () => {
   const root = await mkdtemp(join(tmpdir(), "jp-gate-config-"));
   try {

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Disable inherited correction by default in pi-subagent workers, avoiding an extra gate pass on internal results before the parent corrects its user-facing answer. Explicit `--jp-gate on` and `/jp-gate on` still enable worker correction.
+
 - Restore editable external Markdown prompts, prompt path overrides, and reload support. Preserve the current bundled prompt and never overwrite existing external prompts on package updates.
 
 - Start from the JSON-mode implementation in `9de5b20`, then extract only the response text for correction. Send and receive plain text at the gate, and return it to the original Pi response. Remove gate JSON validation, protection markers, literal validation, and additional editing requests.
