@@ -9,7 +9,8 @@ export interface GateConfig {
     promptFile?: string;
     timeoutMs: number;
     maxTokens: number;
-    temperature: number;
+    /** Omit to inherit the gate model/provider sampling settings. */
+    temperature?: number;
   };
   failureMode: "block" | "passthrough";
   /** Loaded runtime snapshot; not a JSON configuration key. */
@@ -25,7 +26,7 @@ export interface FlagOverrides {
 
 export const DEFAULT_CONFIG: GateConfig = {
   enabled: true,
-  gate: { timeoutMs: 60_000, maxTokens: 8192, temperature: 0 },
+  gate: { timeoutMs: 60_000, maxTokens: 8192 },
   failureMode: "block",
 };
 

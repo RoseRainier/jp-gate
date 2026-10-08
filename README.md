@@ -134,8 +134,7 @@ Markdown の内容全体を、そのまま Gate の system prompt として渡�
   "gate": {
     "model": "openai/gpt-4.1-mini",
     "timeoutMs": 60000,
-    "maxTokens": 8192,
-    "temperature": 0
+    "maxTokens": 8192
   },
   "failureMode": "block"
 }
@@ -150,8 +149,10 @@ Markdown の内容全体を、そのまま Gate の system prompt として渡�
 | `gate.promptFile` | 自動選択 | カスタム Markdown プロンプトのパス |
 | `gate.timeoutMs` | `60000` | Gate 呼び出しの待機上限（ミリ秒） |
 | `gate.maxTokens` | `8192` | 補正結果の出力トークン上限 |
-| `gate.temperature` | `0` | Gate モデルの temperature |
+| `gate.temperature` | 未指定（モデル／プロバイダーから継承） | 明示した場合だけ temperature を指定（`0`〜`2`） |
 | `failureMode` | `block` | 補正失敗時の動作。`block` または `passthrough` |
+
+既定では temperature、top-p、top-k などのサンプリング値を Gate から指定せず、補正用モデルに登録された設定やサーバーの既定値を使います。`gate.temperature` を明示した場合だけ指定値を渡します。既存の設定ファイルに `"temperature": 0` がある場合は、その指定が引き続き有効です。継承したい場合はこの項目を削除してください。thinking の指定と出力トークン上限はこれまでどおりです。
 
 別の設定ファイルを指定することもできます。
 

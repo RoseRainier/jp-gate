@@ -62,7 +62,7 @@ export async function correctMessage(
         messages: [{ role: "user", content: part.text, timestamp: Date.now() }],
       }, {
         signal: operationSignal,
-        temperature: config.gate.temperature,
+        ...(config.gate.temperature !== undefined ? { temperature: config.gate.temperature } : {}),
         maxTokens: model.maxTokens > 0 ? Math.min(config.gate.maxTokens, model.maxTokens) : config.gate.maxTokens,
         reasoning: "low",
       }).result()));

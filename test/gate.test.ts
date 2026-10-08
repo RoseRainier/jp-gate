@@ -25,7 +25,9 @@ test("the gate receives only plain prose and retains tools, reasoning, and main 
       assert.ok(context.systemPrompt?.includes("Keep meaning"));
       assert.ok(context.systemPrompt?.includes("Haruka"));
       assert.ok(!context.systemPrompt?.includes("JSON"));
-      assert.equal(options?.temperature, 0);
+      assert.equal(Object.hasOwn(options!, "temperature"), false);
+      assert.equal(Object.hasOwn(options!, "samplingParams"), false);
+      assert.equal(options?.maxTokens, config.gate.maxTokens);
       assert.equal(options?.reasoning, "low");
       return streamOf(message(expected));
     },
@@ -39,6 +41,25 @@ test("the gate receives only plain prose and retains tools, reasoning, and main 
   assert.equal(corrected.content[2], tool);
   assert.equal(corrected.stopReason, "toolUse");
   assert.equal(corrected.usage, draft.usage);
+});
+
+test("explicit temperatures are sent only when configured, including zero", async () => {
+  for (const temperature of [0, 1]) {
+    let calls = 0;
+    const client: GateClient = {
+      find: () => testModel,
+      streamSimple: (_model, _context, options) => {
+        calls++;
+        assert.equal(Object.hasOwn(options!, "temperature"), true);
+        assert.equal(options?.temperature, temperature);
+        assert.equal(options?.reasoning, "low");
+        assert.equal(options?.maxTokens, config.gate.maxTokens);
+        return streamOf(message("こんにちは。"));
+      },
+    };
+    await correctMessage(message("Hello."), mergeConfig(config, { gate: { temperature } }), client);
+    assert.equal(calls, 1);
+  }
 });
 
 test("unchanged prose retains newlines and its provider signature", async () => {

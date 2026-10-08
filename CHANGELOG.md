@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Inherit the gate model/provider sampling settings by default instead of forcing temperature 0. Keep explicit temperature overrides, including 0, and retain the existing reasoning and output-token limits.
+
 - Disable inherited correction by default in pi-subagent workers, avoiding an extra gate pass on internal results before the parent corrects its user-facing answer. Explicit `--jp-gate on` and `/jp-gate on` still enable worker correction.
 
 - Restore editable external Markdown prompts, prompt path overrides, and reload support. Preserve the current bundled prompt and never overwrite existing external prompts on package updates.

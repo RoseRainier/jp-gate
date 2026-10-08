@@ -28,6 +28,17 @@ test("CLI flags provide on/off overrides without boolean-default conflicts", () 
 
 });
 
+test("temperature is inherited by default and explicit overrides, including zero, remain valid", () => {
+  const inherited = mergeConfig(DEFAULT_CONFIG, { gate: { model: "p/m" } });
+  assert.equal(Object.hasOwn(DEFAULT_CONFIG.gate, "temperature"), false);
+  assert.equal(Object.hasOwn(inherited.gate, "temperature"), false);
+  const zero = mergeConfig(inherited, { gate: { temperature: 0 } });
+  assert.equal(zero.gate.temperature, 0);
+  assert.equal(mergeConfig(zero, { gate: { timeoutMs: 1000 } }).gate.temperature, 0);
+  assert.equal(mergeConfig(zero, { gate: { temperature: 1 } }).gate.temperature, 1);
+  assert.equal(Object.hasOwn(DEFAULT_CONFIG.gate, "temperature"), false);
+});
+
 test("workers skip inherited correction unless explicitly enabled", () => {
   for (const depth of ["1", "2", "10"]) {
     const env = { PI_SUBAGENT_DEPTH: depth };
@@ -47,7 +58,7 @@ test("settings merge in global < project < explicit file < CLI order", async () 
     const cwd = join(root, "project");
     await mkdir(agentDir);
     await mkdir(join(cwd, ".pi"), { recursive: true });
-    await writeFile(join(agentDir, "jp-gate.json"), JSON.stringify({ enabled: false, gate: { model: "global/m", timeoutMs: 1500 } }));
+    await writeFile(join(agentDir, "jp-gate.json"), JSON.stringify({ enabled: false, gate: { model: "global/m", timeoutMs: 1500, temperature: 0 } }));
     await writeFile(join(cwd, ".pi", "jp-gate.json"), JSON.stringify({ enabled: true, gate: { model: "project/m" } }));
     await writeFile(join(cwd, "extra.json"), JSON.stringify({ gate: { model: "extra/m", maxTokens: 2048 } }));
     const loaded = await loadConfig(cwd, agentDir, { configPath: "extra.json", model: "cli/m", enabled: false });
@@ -55,7 +66,10 @@ test("settings merge in global < project < explicit file < CLI order", async () 
     assert.equal(loaded.config.gate.model, "cli/m");
     assert.equal(loaded.config.gate.timeoutMs, 1500);
     assert.equal(loaded.config.gate.maxTokens, 2048);
+    assert.equal(loaded.config.gate.temperature, 0);
     assert.equal(loaded.files.length, 3);
+    await writeFile(join(cwd, "extra.json"), JSON.stringify({ gate: { temperature: 1 } }));
+    assert.equal((await loadConfig(cwd, agentDir, { configPath: "extra.json", enabled: false })).config.gate.temperature, 1);
     await assert.rejects(loadConfig(cwd, agentDir, { configPath: "missing.json" }), /読み込めません/);
     await writeFile(join(cwd, ".pi", "jp-gate.json"), "{bad");
     await assert.rejects(loadConfig(cwd, agentDir), /設定ファイル/);
