@@ -11,7 +11,7 @@ test("provider IDs and model IDs containing slashes resolve without ambiguity", 
 });
 
 test("configuration validates types, limits, and typos", () => {
-  for (const config of [null, [], { enable: true }, { enabled: "off" }, { gate: null }, { gate: { typo: 1 } }, { gate: { maxTokens: 0 } }, { gate: { timeoutMs: 2 ** 32 } }, { gate: { temperature: -1 } }, { gate: { model: "foo" } }, { failureMode: "ignore" }, { validationMode: "ignore" }, { validationMode: true }]) {
+  for (const config of [null, [], { enable: true }, { enabled: "off" }, { gate: null }, { gate: { typo: 1 } }, { gate: { maxTokens: 0 } }, { gate: { timeoutMs: 2 ** 32 } }, { gate: { temperature: -1 } }, { gate: { model: "foo" } }, { failureMode: "ignore" }, { validationMode: "ignore" }, { validationMode: true }, { gate: { promptFile: "" } }, { gate: { promptFile: 42 } }]) {
     assert.throws(() => mergeConfig(DEFAULT_CONFIG, config));
   }
   const result = mergeConfig(DEFAULT_CONFIG, { enabled: false, gate: { model: "p/m" } });
@@ -22,8 +22,8 @@ test("configuration validates types, limits, and typos", () => {
 
 test("CLI flags provide on/off overrides without boolean-default conflicts", () => {
   assert.deepEqual(parseFlags(() => undefined), {});
-  const flags: Record<string, string> = { "jp-gate": "off", "jp-gate-model": "p/m", "jp-gate-config": "./custom.json" };
-  assert.deepEqual(parseFlags((key) => flags[key]), { enabled: false, model: "p/m", configPath: "./custom.json" });
+  const flags: Record<string, string> = { "jp-gate": "off", "jp-gate-model": "p/m", "jp-gate-config": "./custom.json", "jp-gate-prompt": "./prompt.md" };
+  assert.deepEqual(parseFlags((key) => flags[key]), { enabled: false, model: "p/m", configPath: "./custom.json", promptFile: "./prompt.md" });
   assert.throws(() => parseFlags(() => "false"));
 
 });

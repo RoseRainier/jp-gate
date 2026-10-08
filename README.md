@@ -85,6 +85,36 @@ pi --jp-gate on --jp-gate-model openai/gpt-4.1-mini --mode json -p "このプロ
 
 JSON モードでは、補正後の本文を含む Pi の JSON イベントを出力します。Gate モデルに渡すのは本文の文字列だけです。
 
+## プロンプトを編集する
+
+編集用プロンプトは **Markdown ファイル** です。全体用の保存場所は `~/.pi/agent/jp-gate-prompt.md` で、拡張パッケージの外にあるため `pi update` で上書きされません。`PI_CODING_AGENT_DIR` を指定している場合は、そのディレクトリー内を使います。
+
+全体用プロンプトを初めて使う際、ファイルがなければ同梱の [prompts/jp-gate.md](prompts/jp-gate.md) をコピーして作成します。既存のファイルは起動・再読み込み時にも上書きしません。以後はこの編集用 Markdown を変更し、`/jp-gate reload` で反映できます。
+
+| 適用範囲 | ファイル／指定方法 |
+| --- | --- |
+| 全体用 | `~/.pi/agent/jp-gate-prompt.md` |
+| 作業ディレクトリー用 | `<cwd>/.pi/jp-gate-prompt.md` を作成 |
+| 任意のファイル | `gate.promptFile` または `--jp-gate-prompt <path>` で指定 |
+
+プロンプトの選択順は、優先度の高い順に **CLI の `--jp-gate-prompt` → 設定の `gate.promptFile` → 作業ディレクトリーの Markdown → 全体用 Markdown** です。設定ファイル間の `gate.promptFile` の優先順位は、ほかの設定項目と同じです。明示指定した相対パスは、JSON 設定・CLI ともに起動時の `<cwd>` を基準に解決します。
+
+任意のファイルを設定する例:
+
+```json
+{
+  "gate": {
+    "promptFile": "/absolute/path/to/my-jp-gate-prompt.md"
+  }
+}
+```
+
+`pi --jp-gate-prompt ./my-prompt.md` と起動時に指定することもできます。更新後も保持したい編集用ファイルは、拡張のインストール先の外に保存してください。同梱の `prompts/jp-gate.md` は初期テンプレートで、パッケージ更新の対象になりますが、その変更を既存の編集用ファイルへ自動反映することはありません。
+
+Markdown の内容全体を、そのまま Gate の system prompt として渡します。TypeScript の宣言や文字列の囲みは不要です。旧 `src/gate-prompt.ts` を直接編集していた場合は、更新前にその指示本文を外部 Markdown へ移してください。
+
+存在しない明示指定ファイル、読めないファイル、空のプロンプトはエラーにします。別のプロンプトへの切り替えや上書きは行いません。OFF 時にはプロンプトを読み込まず、`/jp-gate on` で有効化するときに読み込みます。
+
 ## 設定ファイル
 
 毎回モデルを指定せずに使う場合は、次のいずれかの場所に `jp-gate.json` を作成します。
@@ -115,6 +145,7 @@ JSON モードでは、補正後の本文を含む Pi の JSON イベントを�
 | --- | --- | --- |
 | `enabled` | `true` | 日本語補正の ON/OFF（既定で ON） |
 | `gate.model` | 未指定 | `provider/model-id` 形式の補正用モデル。ON 時に本文を補正するために必須 |
+| `gate.promptFile` | 自動選択 | カスタム Markdown プロンプトのパス |
 | `gate.timeoutMs` | `60000` | Gate 呼び出しの待機上限（ミリ秒） |
 | `gate.maxTokens` | `8192` | 補正結果の出力トークン上限 |
 | `gate.temperature` | `0` | Gate モデルの temperature |
@@ -184,7 +215,7 @@ npm pack --dry-run
 
 `npm run check` は型チェック、ユニットテスト、実際の Pi CLI を使う結合テストを実行します。結合テストは模擬モデルを使うため、外部 API 呼び出しや認証情報は不要です。
 
-補正用プロンプトは [src/gate-prompt.ts](src/gate-prompt.ts) で編集できます。変更後は Pi を再起動してください。
+補正用プロンプトは外部 Markdown で編集し、`/jp-gate reload` で反映できます。同梱の初期テンプレートは [prompts/jp-gate.md](prompts/jp-gate.md) です。
 
 ## ライセンス
 

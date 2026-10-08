@@ -5,7 +5,7 @@
   "type": "module",
   "license": "Apache-2.0",
   "keywords": ["pi-package", "pi-extension", "japanese", "llm", "gate"],
-  "files": ["extensions", "src", "examples", "README.md", "LICENSE", "CHANGELOG.md"],
+  "files": ["extensions", "src", "prompts", "examples", "README.md", "LICENSE", "CHANGELOG.md"],
   "pi": { "extensions": ["./extensions/jp-correct.ts"] },
   "scripts": {
     "typecheck": "tsc --noEmit",

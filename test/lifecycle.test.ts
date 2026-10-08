@@ -44,6 +44,29 @@ test("slash commands, settings reload, provider restoration, and extension reloa
     await session.prompt("テスト");
     assert.equal(session.getLastAssistantText(), expected);
 
+    const promptPath = join(agentDir, "jp-gate-prompt.md");
+    await writeFile(configPath, JSON.stringify({ gate: { model: "jp-gate-fixture/prompt-editor" } }));
+    await writeFile(promptPath, "# 初回のカスタム指示\n本文の校正。");
+    await session.prompt("/jp-gate reload");
+    await session.prompt("テスト");
+    assert.equal(session.getLastAssistantText(), "# 初回のカスタム指示 `npm run dev`");
+    await writeFile(promptPath, "# 編集後のカスタム指示\n本文の校正。");
+    await session.prompt("テスト");
+    assert.equal(session.getLastAssistantText(), "# 初回のカスタム指示 `npm run dev`");
+    await session.prompt("/jp-gate reload");
+    await session.prompt("テスト");
+    assert.equal(session.getLastAssistantText(), "# 編集後のカスタム指示 `npm run dev`");
+    await session.prompt("/jp-gate off");
+    await writeFile(promptPath, "# ON 後のカスタム指示\n本文の校正。");
+    await session.prompt("/jp-gate on");
+    await session.prompt("テスト");
+    assert.equal(session.getLastAssistantText(), "# ON 後のカスタム指示 `npm run dev`");
+    await session.reload();
+    await session.prompt("テスト");
+    assert.equal(session.getLastAssistantText(), "# ON 後のカスタム指示 `npm run dev`");
+    await writeFile(configPath, JSON.stringify({ gate: { model: "jp-gate-fixture/editor" } }));
+    await session.prompt("/jp-gate reload");
+
     await session.setModel(runtime.getModel("jp-gate-fixture", "paragraph-draft")!);
     await session.prompt("/jp-gate model jp-gate-fixture/paragraph-editor");
     await session.prompt("テスト");

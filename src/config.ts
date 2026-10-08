@@ -1,21 +1,26 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
+import { loadPrompt, type GatePrompt } from "./prompt.ts";
 
 export interface GateConfig {
   enabled: boolean;
   gate: {
     model?: string;
+    promptFile?: string;
     timeoutMs: number;
     maxTokens: number;
     temperature: number;
   };
   failureMode: "block" | "passthrough";
+  /** Loaded runtime snapshot; not a JSON configuration key. */
+  prompt?: GatePrompt;
 }
 
 export interface FlagOverrides {
   enabled?: boolean;
   model?: string;
   configPath?: string;
+  promptFile?: string;
 }
 
 export const DEFAULT_CONFIG: GateConfig = {
@@ -61,7 +66,14 @@ export function mergeConfig(base: GateConfig, input: unknown): GateConfig {
   }
   if ("gate" in source) {
     const gate = object(source.gate, "gate");
-    checkKeys(gate, ["model", "timeoutMs", "maxTokens", "temperature"], "gate");
+    checkKeys(gate, ["model", "promptFile", "timeoutMs", "maxTokens", "temperature"], "gate");
+    if ("promptFile" in gate) {
+      if (typeof gate.promptFile !== "string" || !gate.promptFile.trim()) {
+        throw new Error("gate.promptFile に Markdown ファイルのパスを指定してください。");
+      }
+      next.gate.promptFile = gate.promptFile;
+      delete next.prompt;
+    }
     if ("model" in gate) {
       if (typeof gate.model !== "string") throw new Error("gate.model は文字列で指定してください。");
       splitModel(gate.model);
@@ -105,6 +117,13 @@ export function parseFlags(getFlag: (name: string) => boolean | string | undefin
     if (typeof configPath !== "string" || !configPath.trim()) throw new Error("--jp-gate-config にファイルパスを指定してください。");
     result.configPath = configPath;
   }
+  const promptFile = getFlag("jp-gate-prompt");
+  if (promptFile !== undefined) {
+    if (typeof promptFile !== "string" || !promptFile.trim()) {
+      throw new Error("--jp-gate-prompt に Markdown ファイルのパスを指定してください。");
+    }
+    result.promptFile = promptFile;
+  }
   return result;
 }
 
@@ -131,5 +150,7 @@ export async function loadConfig(cwd: string, agentDir: string, flags: FlagOverr
   }
   if (flags.enabled !== undefined) config.enabled = flags.enabled;
   if (flags.model !== undefined) config.gate.model = flags.model;
+  if (flags.promptFile !== undefined) config.gate.promptFile = flags.promptFile;
+  if (config.enabled) config.prompt = await loadPrompt(cwd, agentDir, config.gate.promptFile);
   return { config, files };
 }

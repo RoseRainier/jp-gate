@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { AssistantMessage, Context, Model, ModelsSimpleStreamOptions, Usage } from "@earendil-works/pi-ai";
 import type { GateConfig } from "./config.ts";
 import { splitModel } from "./config.ts";
-import { GATE_PROMPT } from "./gate-prompt.ts";
+import { GATE_PROMPT, loadPrompt } from "./prompt.ts";
 
 export { GATE_PROMPT } from "./gate-prompt.ts";
 
@@ -47,6 +47,9 @@ export async function correctMessage(
   const spec = splitModel(config.gate.model);
   const model = client.find(spec.provider, spec.id);
   if (!model) throw new Error(`Gate モデル '${config.gate.model}' が Pi に登録されていません。`);
+  const systemPrompt = config.prompt?.text ?? (config.gate.promptFile
+    ? (await loadPrompt(process.cwd(), "", config.gate.promptFile)).text : GATE_PROMPT);
+  signal?.throwIfAborted();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error(`Gate モデルが ${config.gate.timeoutMs}ms 以内に応答しませんでした。`)), config.gate.timeoutMs);
   const operationSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
@@ -55,7 +58,7 @@ export async function correctMessage(
     for (const part of texts) {
       if (!part.text.trim()) { output.push(part.text); continue; }
       const reply = await withDeadline(operationSignal, () => gateBypass.run(true, () => client.streamSimple(model, {
-        systemPrompt: GATE_PROMPT,
+        systemPrompt,
         messages: [{ role: "user", content: part.text, timestamp: Date.now() }],
       }, {
         signal: operationSignal,

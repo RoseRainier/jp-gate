@@ -1,5 +1,6 @@
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_CONFIG, loadConfig, mergeConfig, parseFlags, splitModel, type GateConfig } from "./config.ts";
+import { loadPrompt } from "./prompt.ts";
 import { ProviderGate } from "./providers.ts";
 
 export default function japaneseGateExtension(pi: ExtensionAPI): void {
@@ -12,6 +13,7 @@ export default function japaneseGateExtension(pi: ExtensionAPI): void {
   pi.registerFlag("jp-gate", { type: "string", description: "Japanese LLM gate: on | off" });
   pi.registerFlag("jp-gate-model", { type: "string", description: "Gate model in provider/model-id format" });
   pi.registerFlag("jp-gate-config", { type: "string", description: "Additional Japanese gate JSON configuration file" });
+  pi.registerFlag("jp-gate-prompt", { type: "string", description: "Custom Japanese gate Markdown prompt file" });
 
   const notify = (message: string, level: "info" | "warning" | "error" = "info") => {
     if (latestCtx?.hasUI) latestCtx.ui.notify(message, level);
@@ -94,15 +96,17 @@ export default function japaneseGateExtension(pi: ExtensionAPI): void {
           if (rest.length > 0) throw new Error("/jp-gate on | off | status | reload | model provider/model-id");
           if (action === "on" || action === "off") {
             if (action === "on" && configError) throw new Error(`${configError} /jp-gate reload で再読み込みしてください。`);
-            config = { ...config, enabled: action === "on" };
+            const prompt = action === "on" ? await loadPrompt(ctx.cwd, getAgentDir(), config.gate.promptFile) : config.prompt;
+            config = { ...config, enabled: action === "on", prompt };
             notify(`日本語 Gate: ${action.toUpperCase()}（このセッションのみ）`);
           } else if (action === "reload") {
             await reload(ctx);
-            if (!configError) notify("日本語 Gate の設定を再読み込みしました。");
+            if (!configError) notify("日本語 Gate の設定とプロンプトを再読み込みしました。");
           } else if (action === "status") {
             notify([
               `日本語 Gate: ${config.enabled ? "ON" : "OFF"}`,
               `Gate モデル: ${config.gate.model ?? "未設定"}`,
+              `プロンプト: ${config.prompt?.path ?? config.gate.promptFile ?? "ON 時に読み込み"}`,
               `失敗時: ${config.failureMode}; 制限: ${config.gate.timeoutMs}ms / ${config.gate.maxTokens} tokens`,
               `設定ファイル: ${files.length ? files.join(", ") : "なし（既定値／CLI）"}`,
               ...(configError ? [`設定エラー: ${configError}`] : []),

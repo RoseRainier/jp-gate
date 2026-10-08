@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Restore editable external Markdown prompts, prompt path overrides, and reload support. Preserve the current bundled prompt and never overwrite existing external prompts on package updates.
+
 - Start from the JSON-mode implementation in `9de5b20`, then extract only the response text for correction. Send and receive plain text at the gate, and return it to the original Pi response. Remove gate JSON validation, protection markers, literal validation, and additional editing requests.
 - Shorten the supplied gate prompt to plain-text translation and correction in Haruka's voice. Allow minor wording changes while preserving content and intent, and request low reasoning for the correction call.
 
